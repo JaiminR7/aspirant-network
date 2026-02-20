@@ -40,7 +40,21 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters'],
-    select: false // Don't return password by default in queries
+    select: false, // Don't return password by default in queries
+    validate: {
+      validator: function(value) {
+        // Skip validation if password is being hashed (starts with $2 for bcrypt)
+        if (value && value.startsWith('$2')) return true;
+        
+        // Validate password strength for new/updated passwords
+        const hasUpperCase = /[A-Z]/.test(value);
+        const hasNumber = /[0-9]/.test(value);
+        const hasSymbol = /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\;'/`~]/.test(value);
+        
+        return hasUpperCase && hasNumber && hasSymbol;
+      },
+      message: 'Password must contain at least one uppercase letter, one number, and one special character'
+    }
   },
 
   // CRITICAL: Exam Context (MANDATORY)
@@ -184,6 +198,34 @@ const userSchema = new mongoose.Schema({
     default: false
   },
 
+  // OTP Verification Fields
+  otpHash: {
+    type: String,
+    select: false
+  },
+
+  otpExpiry: {
+    type: Date,
+    select: false
+  },
+
+  otpAttempts: {
+    type: Number,
+    default: 0,
+    select: false
+  },
+
+  // Password Reset Fields
+  passwordResetToken: {
+    type: String,
+    select: false
+  },
+
+  passwordResetExpiry: {
+    type: Date,
+    select: false
+  },
+
   // Last Activity Tracking
   lastActiveAt: {
     type: Date,
@@ -192,162 +234,30 @@ const userSchema = new mongoose.Schema({
 
 }, {
   timestamps: true, // Adds createdAt and updatedAt automatically
-  strict: true, // Prevent fields not in schema from being saved
+  strict: true,
   collection: 'users'
 });
 
-// ==================== INDEXES ====================
-
-// Unique indexes (already enforced by unique: true, but explicit is better)
-userSchema.index({ username: 1 }, { unique: true });
-userSchema.index({ email: 1 }, { unique: true });
-
-// Query optimization indexes
 userSchema.index({ primaryExam: 1 });
-userSchema.index({ level: 1 });
 userSchema.index({ credibilityScore: -1 });
 userSchema.index({ isActive: 1 });
 
-// ==================== MIDDLEWARE ====================
-
-// Hash password before saving
-userSchema.pre('save', async function(next) {
-  // Only hash if password is modified or new
-  if (!this.isModified('passwordHash')) {
-    return next();
-  }
-
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
-    next();
-  } catch (error) {
-    next(error);
+userSchema.pre('save', async function() {
+  if (this.isModified('passwordHash')) {
+    this.passwordHash = await bcrypt.hash(this.passwordHash, 10);
   }
 });
 
-// Update lastActiveAt before saving
-userSchema.pre('save', function(next) {
-  if (this.isModified() && !this.isNew) {
-    this.lastActiveAt = Date.now();
-  }
-  next();
-});
-
-// ==================== INSTANCE METHODS ====================
-
-// Compare password for login
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  try {
-    return await bcrypt.compare(candidatePassword, this.passwordHash);
-  } catch (error) {
-    throw new Error('Password comparison failed');
-  }
+userSchema.methods.comparePassword = async function(password) {
+  return bcrypt.compare(password, this.passwordHash);
 };
 
-// Update credibility score
-userSchema.methods.addCredibility = function(points) {
-  this.credibilityScore += points;
-  return this.save();
-};
-
-// Update last active timestamp
-userSchema.methods.updateLastActive = function() {
-  this.lastActiveAt = Date.now();
-  return this.save();
-};
-
-// Increment question count
-userSchema.methods.incrementQuestions = function() {
-  this.stats.questionsPosted += 1;
-  return this.save();
-};
-
-// Increment answer count
-userSchema.methods.incrementAnswers = function() {
-  this.stats.answersGiven += 1;
-  return this.save();
-};
-
-// Increment resource count
-userSchema.methods.incrementResources = function() {
-  this.stats.resourcesShared += 1;
-  return this.save();
-};
-
-// Add helpful vote
-userSchema.methods.addHelpfulVote = function() {
-  this.stats.helpfulVotes += 1;
-  this.credibilityScore += 1; // Increase credibility with helpful votes
-  return this.save();
-};
-
-// Check if user has blocked another user
-userSchema.methods.hasBlocked = function(userId) {
-  return this.blockedUsers.some(id => id.toString() === userId.toString());
-};
-
-// Block a user
-userSchema.methods.blockUser = function(userId) {
-  if (!this.hasBlocked(userId)) {
-    this.blockedUsers.push(userId);
-  }
-  return this.save();
-};
-
-// Unblock a user
-userSchema.methods.unblockUser = function(userId) {
-  this.blockedUsers = this.blockedUsers.filter(
-    id => id.toString() !== userId.toString()
-  );
-  return this.save();
-};
-
-// ==================== STATIC METHODS ====================
-
-// Find user by email or username
-userSchema.statics.findByCredentials = async function(identifier) {
-  const user = await this.findOne({
-    $or: [
-      { email: identifier.toLowerCase() },
-      { username: identifier.toLowerCase() }
-    ]
-  }).select('+passwordHash');
-  
-  return user;
-};
-
-// Get active users by exam
-userSchema.statics.getActiveUsersByExam = function(exam) {
-  return this.find({ 
-    primaryExam: exam, 
-    isActive: true 
-  });
-};
-
-// ==================== VIRTUAL PROPERTIES ====================
-
-// Full profile URL (for frontend routing)
-userSchema.virtual('profileUrl').get(function() {
-  return `/profile/${this.username}`;
-});
-
-// Display name (prioritize name over username)
-userSchema.virtual('displayName').get(function() {
-  return this.name || this.username;
-});
-
-// Ensure virtuals are included in JSON
-userSchema.set('toJSON', { 
-  virtuals: true,
+userSchema.set('toJSON', {
   transform: function(doc, ret) {
-    // Remove sensitive fields
     delete ret.passwordHash;
     delete ret.__v;
     return ret;
   }
 });
-
-userSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('User', userSchema);

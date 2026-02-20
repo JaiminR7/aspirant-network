@@ -83,131 +83,24 @@ const topicSchema = new mongoose.Schema({
     }
   }
 
-}, {
-  timestamps: true,
-  strict: true,
-  collection: 'topics'
-});
+}, { timestamps: true, collection: 'topics' });
 
-// ==================== INDEXES ====================
-
-// Unique topic per subject per exam (prevents duplicate topics)
 topicSchema.index({ exam: 1, subject: 1, name: 1 }, { unique: true });
 topicSchema.index({ exam: 1, subjectName: 1, slug: 1 }, { unique: true });
-
-// Query optimization
 topicSchema.index({ exam: 1, subject: 1, isActive: 1 });
-topicSchema.index({ exam: 1, subjectName: 1 });
-topicSchema.index({ subject: 1, isActive: 1 });
-topicSchema.index({ difficulty: 1 });
-topicSchema.index({ displayOrder: 1 });
 
-// ==================== MIDDLEWARE ====================
-
-// Auto-generate slug from name before saving
-topicSchema.pre('save', function(next) {
+topicSchema.pre('save', async function() {
   if (this.isModified('name') && !this.slug) {
-    this.slug = this.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+    this.slug = this.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
-  next();
-});
-
-// CRITICAL: Validate that topic's exam matches subject's exam
-topicSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('subject') || this.isModified('exam')) {
-    try {
-      const Subject = mongoose.model('Subject');
-      const subject = await Subject.findById(this.subject);
-      
-      if (!subject) {
-        return next(new Error('Subject not found'));
-      }
-      
-      if (subject.exam !== this.exam) {
-        return next(new Error(`Topic exam (${this.exam}) must match subject exam (${subject.exam})`));
-      }
-      
-      // Auto-populate subjectName
-      this.subjectName = subject.name;
-      
-      next();
-    } catch (error) {
-      next(error);
-    }
-  } else {
-    next();
+    const Subject = mongoose.model('Subject');
+    const subject = await Subject.findById(this.subject);
+    if (!subject) throw new Error('Subject not found');
+    if (subject.exam !== this.exam) throw new Error('Topic exam must match subject exam');
+    this.subjectName = subject.name;
   }
 });
-
-// ==================== INSTANCE METHODS ====================
-
-// Increment question count
-topicSchema.methods.incrementQuestions = function() {
-  this.stats.totalQuestions += 1;
-  return this.save();
-};
-
-// Increment resource count
-topicSchema.methods.incrementResources = function() {
-  this.stats.totalResources += 1;
-  return this.save();
-};
-
-// Update difficulty
-topicSchema.methods.updateDifficulty = function(difficulty) {
-  this.difficulty = difficulty;
-  return this.save();
-};
-
-// ==================== STATIC METHODS ====================
-
-// Get all topics for a specific exam
-topicSchema.statics.getByExam = function(exam, activeOnly = true) {
-  const query = { exam };
-  
-  if (activeOnly) {
-    query.isActive = true;
-  }
-  
-  return this.find(query)
-    .populate('subject', 'name slug')
-    .sort({ displayOrder: 1, name: 1 });
-};
-
-// Get topics for a specific subject
-topicSchema.statics.getBySubject = function(subjectId, activeOnly = true) {
-  const query = { subject: subjectId };
-  
-  if (activeOnly) {
-    query.isActive = true;
-  }
-  
-  return this.find(query).sort({ displayOrder: 1, name: 1 });
-};
-
-// Get topics by exam and subject name
-topicSchema.statics.getByExamAndSubject = function(exam, subjectName, activeOnly = true) {
-  const query = { exam, subjectName };
-  
-  if (activeOnly) {
-    query.isActive = true;
-  }
-  
-  return this.find(query).sort({ displayOrder: 1, name: 1 });
-};
-
-// Get topic by exam, subject name, and topic name
-topicSchema.statics.getByExamSubjectAndName = function(exam, subjectName, topicName) {
-  return this.findOne({ 
-    exam, 
-    subjectName, 
-    name: topicName, 
-    isActive: true 
-  }).populate('subject', 'name slug');
-};
 
 // Get topic by exam, subject name, and slug
 topicSchema.statics.getByExamSubjectAndSlug = function(exam, subjectName, slug) {
@@ -257,6 +150,9 @@ topicSchema.virtual('fullName').get(function() {
 
 // URL path
 topicSchema.virtual('path').get(function() {
+  if (!this.exam || !this.subjectName) {
+    return `/topics/${this.slug || this._id}`;
+  }
   return `/exams/${this.exam.toLowerCase()}/subjects/${this.subjectName.toLowerCase().replace(/\s+/g, '-')}/topics/${this.slug}`;
 });
 

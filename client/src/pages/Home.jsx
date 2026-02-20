@@ -1,391 +1,618 @@
-import { useState } from "react";
-import { useExam } from "../contexts/ExamContext";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "../components/ui/card";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { useExam } from "../context/ExamContext";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import {
+  MessageSquare,
+  ThumbsUp,
+  Eye,
   BookOpen,
-  MessageCircle,
-  Users,
-  Trophy,
-  Clock,
+  Star,
   TrendingUp,
+  Plus,
+  ArrowRight,
+  Image,
+  Video,
   FileText,
-  HelpCircle,
-  ChevronRight,
+  Calendar,
+  Share2,
+  Bookmark,
+  MoreHorizontal,
+  Heart,
+  Repeat2,
+  Sparkles,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  User,
+  AlertCircle,
 } from "lucide-react";
-import { ProfileDropdown } from "../components/ProfileDropdown";
 
-// Mock data - replace with actual API calls
-const generateMockData = (exam) => ({
-  doubts: [
-    {
-      id: 1,
-      title: `Help with ${exam} Quantitative Aptitude`,
-      content:
-        "I'm struggling with profit and loss problems. Can someone explain the basic concepts?",
-      author: "student123",
-      upvotes: 12,
-      answers: 3,
-      timeAgo: "2 hours ago",
-      tags: ["Quantitative Aptitude", "Profit & Loss"],
-    },
-    {
-      id: 2,
-      title: `${exam} Reading Comprehension Tips`,
-      content: "What are some effective strategies for RC passages?",
-      author: "aspirant_2024",
-      upvotes: 8,
-      answers: 5,
-      timeAgo: "4 hours ago",
-      tags: ["Verbal Ability", "Reading Comprehension"],
-    },
-  ],
-  questions: [
-    {
-      id: 1,
-      title: "If a train travels at 60 kmph for 2 hours...",
-      difficulty: "Medium",
-      subject: "Quantitative Aptitude",
-      timeAgo: "1 hour ago",
-      attempts: 145,
-      accuracy: "68%",
-    },
-    {
-      id: 2,
-      title: "Choose the word most similar in meaning to 'Eloquent'",
-      difficulty: "Easy",
-      subject: "Verbal Ability",
-      timeAgo: "3 hours ago",
-      attempts: 203,
-      accuracy: "82%",
-    },
-  ],
-  resources: [
-    {
-      id: 1,
-      title: `Complete ${exam} Study Guide 2024`,
-      type: "PDF",
-      rating: 4.8,
-      downloads: 1200,
-      uploadedBy: "prep_master",
-      timeAgo: "1 day ago",
-    },
-    {
-      id: 2,
-      title: `${exam} Mock Test Series`,
-      type: "Test Series",
-      rating: 4.6,
-      downloads: 890,
-      uploadedBy: "test_guru",
-      timeAgo: "2 days ago",
-    },
-  ],
-  stories: [
-    {
-      id: 1,
-      title: "How I cracked CAT 2023 with 99.8 percentile",
-      author: "success_story",
-      readTime: "5 min",
-      likes: 234,
-      timeAgo: "1 week ago",
-    },
-  ],
-});
+const Home = () => {
+  const { user, getAuthHeader } = useAuth();
+  const { currentExam } = useExam();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-function FeedCard({ children, className = "" }) {
-  return (
-    <Card className={`mb-4 hover:shadow-md transition-shadow ${className}`}>
-      {children}
-    </Card>
-  );
-}
+  const [feedItems, setFeedItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [postContent, setPostContent] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all");
 
-function DoubtCard({ doubt }) {
-  return (
-    <FeedCard>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-lg">{doubt.title}</CardTitle>
-            <CardDescription className="mt-2">{doubt.content}</CardDescription>
+  // Filter feed items based on active filter
+  const filteredItems = feedItems.filter((item) => {
+    if (activeFilter === "all") return true;
+    return item.postType === activeFilter;
+  });
+
+  const handleResourceView = async (resourceId, url, resourceType, title) => {
+    if (!url) return;
+
+    try {
+      // Increment download count
+      await fetch(
+        `http://localhost:5000/api/resources/${resourceId}/download`,
+        {
+          method: "PATCH",
+          headers: getAuthHeader(),
+        },
+      );
+
+      // For PDFs, convert to preview URL that opens in browser
+      if (resourceType === "PDF" && url.includes("cloudinary.com")) {
+        const viewUrl = url.replace(
+          "/raw/upload/",
+          "/raw/upload/fl_attachment:false/",
+        );
+        window.open(viewUrl, "_blank");
+      } else {
+        window.open(url, "_blank");
+      }
+    } catch (error) {
+      console.error("Error viewing resource:", error);
+    }
+  };
+
+  const handleResourceDownload = async (
+    resourceId,
+    url,
+    resourceType,
+    title,
+  ) => {
+    if (!url) return;
+
+    try {
+      // Increment download count
+      await fetch(
+        `http://localhost:5000/api/resources/${resourceId}/download`,
+        {
+          method: "PATCH",
+          headers: getAuthHeader(),
+        },
+      );
+
+      // For PDFs, ensure proper download with .pdf extension
+      if (resourceType === "PDF" && url.includes("cloudinary.com")) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${title}.pdf`;
+        link.target = "_blank";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        window.open(url, "_blank");
+      }
+    } catch (error) {
+      console.error("Error downloading resource:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchFeedData();
+  }, []);
+
+  // Refetch data when navigating back to home page
+  useEffect(() => {
+    if (location.pathname === "/" || location.pathname === "/home") {
+      fetchFeedData();
+    }
+  }, [location.pathname]);
+
+  // Refetch data when the page becomes visible again
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchFeedData();
+      }
+    };
+
+    const handleFocus = () => {
+      fetchFeedData();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  const fetchFeedData = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [questionsRes, resourcesRes, storiesRes] = await Promise.allSettled(
+        [
+          fetch(
+            "http://localhost:5000/api/questions?limit=10&sortBy=-createdAt",
+            {
+              headers: getAuthHeader(),
+            },
+          ),
+          fetch(
+            "http://localhost:5000/api/resources?limit=10&sortBy=-createdAt",
+            {
+              headers: getAuthHeader(),
+            },
+          ),
+          fetch(
+            "http://localhost:5000/api/stories?limit=10&sortBy=-createdAt",
+            {
+              headers: getAuthHeader(),
+            },
+          ),
+        ],
+      );
+
+      const allItems = [];
+
+      // Add questions with postType
+      if (questionsRes.status === "fulfilled" && questionsRes.value.ok) {
+        const questionsData = await questionsRes.value.json();
+        const questions = (questionsData.data || []).map((q) => ({
+          ...q,
+          postType: "question",
+        }));
+        allItems.push(...questions);
+      }
+
+      // Add resources with postType
+      if (resourcesRes.status === "fulfilled" && resourcesRes.value.ok) {
+        const resourcesData = await resourcesRes.value.json();
+        const resources = (resourcesData.data || []).map((r) => ({
+          ...r,
+          postType: "resource",
+        }));
+        allItems.push(...resources);
+      }
+
+      // Add stories with postType
+      if (storiesRes.status === "fulfilled" && storiesRes.value.ok) {
+        const storiesData = await storiesRes.value.json();
+        const stories = (storiesData.data || []).map((s) => ({
+          ...s,
+          postType: "story",
+        }));
+        allItems.push(...stories);
+      }
+
+      // Sort all items by createdAt in descending order
+      allItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      setFeedItems(allItems);
+    } catch (err) {
+      console.error("Error fetching feed data:", err);
+      setError("Failed to load feed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-full border-4 border-primary/30 border-t-primary animate-spin mx-auto"></div>
+            <Sparkles className="h-6 w-6 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           </div>
-          <HelpCircle className="w-5 h-5 text-blue-500 ml-2 flex-shrink-0" />
+          <p className="mt-4 text-muted-foreground">Loading your feed...</p>
         </div>
-      </CardHeader>
+      </div>
+    );
+  }
 
-      <CardContent className="pt-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4 text-sm text-gray-500">
-            <span>by {doubt.author}</span>
-            <span>{doubt.timeAgo}</span>
-            <span>{doubt.upvotes} upvotes</span>
-            <span>{doubt.answers} answers</span>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2 mt-3">
-          {doubt.tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
-              {tag}
-            </Badge>
-          ))}
-        </div>
-      </CardContent>
-    </FeedCard>
-  );
-}
-
-function QuestionCard({ question }) {
-  return (
-    <FeedCard>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-lg">{question.title}</CardTitle>
-            <div className="flex items-center space-x-3 mt-2">
-              <Badge
-                variant={
-                  question.difficulty === "Easy"
-                    ? "success"
-                    : question.difficulty === "Medium"
-                    ? "warning"
-                    : "destructive"
-                }
-              >
-                {question.difficulty}
-              </Badge>
-              <span className="text-sm text-gray-600">{question.subject}</span>
-            </div>
-          </div>
-          <BookOpen className="w-5 h-5 text-green-500 ml-2 flex-shrink-0" />
-        </div>
-      </CardHeader>
-
-      <CardContent className="pt-0">
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>{question.timeAgo}</span>
-          <div className="flex items-center space-x-4">
-            <span>{question.attempts} attempts</span>
-            <span className="text-green-600">{question.accuracy} accuracy</span>
-          </div>
-        </div>
-      </CardContent>
-    </FeedCard>
-  );
-}
-
-function ResourceCard({ resource }) {
-  return (
-    <FeedCard>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-lg">{resource.title}</CardTitle>
-            <div className="flex items-center space-x-3 mt-2">
-              <Badge variant="outline">{resource.type}</Badge>
-              <div className="flex items-center space-x-1">
-                <Trophy className="w-4 h-4 text-yellow-500" />
-                <span className="text-sm">{resource.rating}</span>
-              </div>
-            </div>
-          </div>
-          <FileText className="w-5 h-5 text-purple-500 ml-2 flex-shrink-0" />
-        </div>
-      </CardHeader>
-
-      <CardContent className="pt-0">
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>by {resource.uploadedBy}</span>
-          <div className="flex items-center space-x-4">
-            <span>{resource.downloads} downloads</span>
-            <span>{resource.timeAgo}</span>
-          </div>
-        </div>
-      </CardContent>
-    </FeedCard>
-  );
-}
-
-export function Home() {
-  const { user } = useExam();
-  const [activeTab, setActiveTab] = useState("doubts");
-
-  const mockData = generateMockData(user?.primaryExam);
-
-  const tabs = [
-    {
-      id: "doubts",
-      label: "Trending Doubts",
-      icon: MessageCircle,
-      count: mockData.doubts.length,
-    },
-    {
-      id: "questions",
-      label: "Recent Questions",
-      icon: BookOpen,
-      count: mockData.questions.length,
-    },
-    {
-      id: "resources",
-      label: "Top Resources",
-      icon: FileText,
-      count: mockData.resources.length,
-    },
-    {
-      id: "stories",
-      label: "Success Stories",
-      icon: TrendingUp,
-      count: mockData.stories.length,
-    },
+  const filterOptions = [
+    { value: "all", label: "All", icon: Sparkles },
+    { value: "question", label: "Questions", icon: MessageSquare },
+    { value: "resource", label: "Resources", icon: BookOpen },
+    { value: "story", label: "Stories", icon: FileText },
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 flex-shrink-0">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-xl font-bold text-gray-900">
-                Aspirant Network
-              </h1>
-              <Badge variant="default" className="">
-                {user?.primaryExam}
-              </Badge>
-            </div>
+    <div className="min-h-screen py-6">
+      {/* Page Header */}
+      <div className="px-6 mb-6">
+        <h1 className="text-2xl font-bold text-foreground mb-1">Home Feed</h1>
+        <p className="text-sm text-muted-foreground">
+          Stay updated with questions, resources, and success stories
+        </p>
+      </div>
 
-            <ProfileDropdown />
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          {/* Welcome Section */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Welcome back, {user?.name}!
-            </h2>
-            <p className="text-gray-600">
-              Here's what's happening in the {user?.primaryExam} community
-            </p>
-          </div>
-
-          {/* Tabs */}
-          <div className="mb-6">
-            <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                      activeTab === tab.id
-                        ? "bg-white text-primary shadow-sm"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
-                    {tab.count > 0 && (
-                      <Badge variant="secondary" className="text-xs">
-                        {tab.count}
-                      </Badge>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Feed Content */}
-          <div className="space-y-4">
-            {activeTab === "doubts" && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Trending Doubts</h3>
-                  <Button variant="outline" size="sm">
-                    Ask Question
-                  </Button>
-                </div>
-                {mockData.doubts.map((doubt) => (
-                  <DoubtCard key={doubt.id} doubt={doubt} />
-                ))}
-              </div>
-            )}
-
-            {activeTab === "questions" && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Recent Questions</h3>
-                  <Button variant="outline" size="sm">
-                    Practice Now
-                  </Button>
-                </div>
-                {mockData.questions.map((question) => (
-                  <QuestionCard key={question.id} question={question} />
-                ))}
-              </div>
-            )}
-
-            {activeTab === "resources" && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Top Resources</h3>
-                  <Button variant="outline" size="sm">
-                    Upload Resource
-                  </Button>
-                </div>
-                {mockData.resources.map((resource) => (
-                  <ResourceCard key={resource.id} resource={resource} />
-                ))}
-              </div>
-            )}
-
-            {activeTab === "stories" && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Success Stories</h3>
-                  <Button variant="outline" size="sm">
-                    Share Story
-                  </Button>
-                </div>
-                {mockData.stories.map((story) => (
-                  <FeedCard key={story.id}>
-                    <CardHeader>
-                      <CardTitle className="text-lg">{story.title}</CardTitle>
-                      <div className="flex items-center justify-between text-sm text-gray-500 mt-2">
-                        <span>by {story.author}</span>
-                        <div className="flex items-center space-x-4">
-                          <span>{story.readTime} read</span>
-                          <span>{story.likes} likes</span>
-                          <span>{story.timeAgo}</span>
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </FeedCard>
-                ))}
-              </div>
-            )}
-
-            {/* Load More Button */}
-            <div className="text-center pt-6">
-              <Button variant="outline">
-                Load More
-                <ChevronRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-          </div>
+      {/* Filter Tabs */}
+      <div className="px-6 mb-6">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+          {filterOptions.map((option) => {
+            const Icon = option.icon;
+            return (
+              <button
+                key={option.value}
+                onClick={() => setActiveFilter(option.value)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 whitespace-nowrap ${
+                  activeFilter === option.value
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                }`}
+              >
+                <Icon className="h-5 w-5 flex-shrink-0" />
+                {option.label}
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="mx-6 mb-6 p-4 rounded-xl bg-destructive/10 border border-destructive/20 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {/* Unified Feed */}
+      <section>
+        {filteredItems.length === 0 ? (
+          <div className="mx-6 text-center py-12">
+            <p className="text-muted-foreground text-sm">
+              {feedItems.length === 0
+                ? "Your feed is empty."
+                : `No ${activeFilter === "all" ? "posts" : activeFilter + "s"} found.`}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4 px-6">
+            {filteredItems.map((item) => {
+              // Render based on post type
+              if (item.postType === "question") {
+                return (
+                  <article
+                    key={`question-${item._id}`}
+                    className="content-card hover-lift animate-fade-in"
+                  >
+                    <div className="flex gap-4">
+                      <div className="avatar h-11 w-11 flex-shrink-0 text-base">
+                        {item.createdBy?.name?.charAt(0).toUpperCase() || "?"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {/* Post Type Badge */}
+                        <div className="mb-2">
+                          <Badge className="rounded-full text-xs px-3 py-1 bg-primary/10 text-primary border-0 font-medium">
+                            <MessageSquare className="h-3 w-3 mr-1" />
+                            Question
+                          </Badge>
+                        </div>
+
+                        {/* Author Info */}
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className="font-semibold text-foreground text-sm">
+                            {item.createdBy?.name || "Anonymous"}
+                          </span>
+                          <span className="text-muted-foreground text-xs">
+                            @{item.createdBy?.username || "anonymous"}
+                          </span>
+                          <span className="text-muted-foreground text-xs">
+                            ·
+                          </span>
+                          <span className="text-muted-foreground text-xs">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        {/* Question Content */}
+                        <Link to={`/questions/${item._id}`}>
+                          <h3 className="font-semibold text-foreground mb-2 hover:text-primary transition-colors">
+                            {item.title}
+                          </h3>
+                          {item.description && (
+                            <p className="text-muted-foreground text-sm line-clamp-2 mb-3">
+                              {item.description}
+                            </p>
+                          )}
+                        </Link>
+
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {item.subjectName && (
+                            <Badge className="rounded-full text-xs px-3 py-1 bg-blue-50 text-blue-600 border-0 font-medium">
+                              {item.subjectName}
+                            </Badge>
+                          )}
+                          {item.topicName && (
+                            <Badge className="rounded-full text-xs px-3 py-1 bg-green-50 text-green-600 border-0 font-medium">
+                              {item.topicName}
+                            </Badge>
+                          )}
+                          {item.isSolved && (
+                            <Badge className="rounded-full text-xs px-3 py-1 bg-emerald-50 text-emerald-600 border-0 font-medium">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Solved
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Metrics */}
+                        <div className="flex items-center gap-6 text-sm">
+                          <button className="metric-item group">
+                            <ThumbsUp className="h-4 w-4 group-hover:fill-current group-hover:text-primary transition-all" />
+                            <span>{item.upvotes?.length || 0}</span>
+                          </button>
+                          <button className="metric-item group">
+                            <MessageSquare className="h-4 w-4 group-hover:fill-current group-hover:text-primary transition-all" />
+                            <span>{item.answerCount || 0}</span>
+                          </button>
+                          <div className="metric-item">
+                            <Eye className="h-4 w-4" />
+                            <span>{item.views || 0}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              } else if (item.postType === "resource") {
+                // Generate PDF thumbnail URL from Cloudinary
+                const getPdfThumbnail = (url) => {
+                  if (!url || item.type !== "PDF") return null;
+                  return url
+                    .replace(
+                      "/raw/upload/",
+                      "/image/upload/pg_1,w_200,h_150,c_fill,f_jpg/",
+                    )
+                    .replace(".pdf", ".pdf.jpg");
+                };
+
+                const thumbnailUrl =
+                  item.type === "PDF"
+                    ? getPdfThumbnail(item.content?.url)
+                    : null;
+
+                return (
+                  <article
+                    key={`resource-${item._id}`}
+                    className="content-card animate-fade-in cursor-pointer hover:border-primary/50 transition-all"
+                    onClick={(e) => {
+                      // Don't navigate if clicking on download button
+                      if (e.target.closest("button")) return;
+                      navigate(`/resources/${item._id}`);
+                    }}
+                  >
+                    {/* Post Type Badge & Author Info */}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-semibold text-primary">
+                          {item.createdBy?.name?.charAt(0).toUpperCase() || "U"}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <Badge className="rounded-full text-xs px-3 py-1 bg-secondary/20 text-secondary border-0 font-medium mb-2">
+                          <BookOpen className="h-3 w-3 mr-1" />
+                          Resource
+                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground text-sm">
+                            {item.createdBy?.name || "Anonymous"}
+                          </span>
+                          <span className="text-muted-foreground text-sm">
+                            @{item.createdBy?.username || "user"}
+                          </span>
+                          <span className="text-muted-foreground text-sm">
+                            ·
+                          </span>
+                          <span className="text-muted-foreground text-sm">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                      <Badge className="rounded-full text-xs px-3 py-1">
+                        {item.type}
+                      </Badge>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex items-start gap-4 mb-4">
+                      {/* PDF/Image Preview Thumbnail */}
+                      {(item.type === "PDF" || item.type === "Image") &&
+                        item.content?.url && (
+                          <div
+                            className="flex-shrink-0 cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (item.type === "PDF") {
+                                handleResourceView(
+                                  item._id,
+                                  item.content.url,
+                                  item.type,
+                                  item.title,
+                                );
+                              }
+                            }}
+                          >
+                            {item.type === "PDF" && thumbnailUrl ? (
+                              <div className="w-24 h-24 rounded-lg border bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden hover:border-primary transition-colors">
+                                <img
+                                  src={thumbnailUrl}
+                                  alt={`${item.title} preview`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.style.display = "none";
+                                    e.target.parentElement.innerHTML = `
+                                    <div class="w-full h-full flex flex-col items-center justify-center text-muted-foreground">
+                                      <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                      </svg>
+                                      <span class="text-[10px] font-medium mt-1">PDF</span>
+                                    </div>
+                                  `;
+                                  }}
+                                />
+                              </div>
+                            ) : item.type === "Image" ? (
+                              <div className="w-24 h-24 rounded-lg overflow-hidden border">
+                                <img
+                                  src={item.content.url}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-foreground hover:text-primary transition-colors mb-2">
+                          {item.title}
+                        </h3>
+
+                        {item.description && (
+                          <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                            {item.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Tags */}
+                    {(item.subjectName || item.topicName) && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {item.subjectName && (
+                          <Badge className="rounded-full text-xs px-3 py-1 bg-blue-50 text-blue-600 border-0 font-medium">
+                            {item.subjectName}
+                          </Badge>
+                        )}
+                        {item.topicName && (
+                          <Badge className="rounded-full text-xs px-3 py-1 bg-green-50 text-green-600 border-0 font-medium">
+                            {item.topicName}
+                          </Badge>
+                        )}
+                        {item.isVerified && (
+                          <Badge className="rounded-full text-xs px-2 py-0.5 bg-green-500/10 text-green-600 border-0">
+                            Verified
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Metrics & Actions */}
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-6 text-sm">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                          <span>
+                            {item.rating?.average?.toFixed(1) || "0.0"}
+                          </span>
+                        </div>
+                        <div className="metric-item">
+                          <Bookmark className="h-4 w-4" />
+                          <span>{item.savedBy?.length || 0}</span>
+                        </div>
+                        <div className="metric-item">
+                          <Eye className="h-4 w-4" />
+                          <span>{item.viewCount || 0}</span>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleResourceDownload(
+                            item._id,
+                            item.content?.url || item.content?.externalLink,
+                            item.type,
+                            item.title,
+                          );
+                        }}
+                        className="text-xs"
+                      >
+                        {item.type === "Link" || item.type === "Video" ? (
+                          <>
+                            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                            Open
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-3.5 w-3.5 mr-1.5" />
+                            Download
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </article>
+                );
+              } else if (item.postType === "story") {
+                return (
+                  <article
+                    key={`story-${item._id}`}
+                    className="content-card hover-lift animate-fade-in"
+                  >
+                    <Link to={`/stories/${item._id}`} className="block">
+                      {/* Post Type Badge */}
+                      <div className="mb-3">
+                        <Badge className="rounded-full text-xs px-3 py-1 bg-accent/10 text-accent border-0 font-medium">
+                          <FileText className="h-3 w-3 mr-1" />
+                          Story
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="avatar h-10 w-10 text-sm flex-shrink-0">
+                          {item.author?.name?.charAt(0) || "?"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground text-sm">
+                            {item.author?.name || "Anonymous"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <h3 className="font-semibold text-foreground hover:text-primary transition-colors mb-2">
+                        {item.title}
+                      </h3>
+                      <p className="text-sm text-muted-foreground line-clamp-3">
+                        {item.content}
+                      </p>
+                    </Link>
+                  </article>
+                );
+              }
+
+              return null;
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
-}
+};
+
+export default Home;

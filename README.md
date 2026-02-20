@@ -5,6 +5,7 @@ A comprehensive exam-focused social platform connecting aspirants preparing for 
 ## Features
 
 ### Core Functionality
+
 - **Exam-Scoped Content**: All content automatically scoped to user's primary exam
 - **Questions & Answers**: Ask doubts, get answers, vote, accept solutions
 - **Resources**: Share and discover study materials (PDFs, videos, links, images)
@@ -12,6 +13,7 @@ A comprehensive exam-focused social platform connecting aspirants preparing for 
 - **Search**: Comprehensive search across questions, resources, and tags
 
 ### User Features
+
 - User authentication with JWT
 - Profile management with credibility scoring
 - Tag-based content organization (max 3 user tags per post)
@@ -19,6 +21,7 @@ A comprehensive exam-focused social platform connecting aspirants preparing for 
 - Save/bookmark functionality
 
 ### Security
+
 - Exam context enforced at backend (middleware-based)
 - Protected routes with authentication
 - Input validation and sanitization
@@ -27,6 +30,7 @@ A comprehensive exam-focused social platform connecting aspirants preparing for 
 ## Tech Stack
 
 ### Frontend
+
 - **React 19** with Vite
 - **React Router v6** for routing
 - **Tailwind CSS** for styling
@@ -34,6 +38,7 @@ A comprehensive exam-focused social platform connecting aspirants preparing for 
 - Context API for state management
 
 ### Backend
+
 - **Node.js** with Express
 - **MongoDB** with Mongoose
 - **JWT** for authentication
@@ -67,6 +72,7 @@ aspirant-network/
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js (v16 or higher)
 - MongoDB (v4.4 or higher)
 - npm or yarn
@@ -74,18 +80,21 @@ aspirant-network/
 ### Installation
 
 1. Clone the repository
+
 ```bash
 git clone https://github.com/yourusername/aspirant-network.git
 cd aspirant-network
 ```
 
 2. Install backend dependencies
+
 ```bash
 cd server
 npm install
 ```
 
 3. Install frontend dependencies
+
 ```bash
 cd ../client
 npm install
@@ -94,6 +103,7 @@ npm install
 4. Set up environment variables
 
 Create a `.env` file in the `server` directory:
+
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/aspirant-network
@@ -105,27 +115,32 @@ NODE_ENV=development
 5. Start the development servers
 
 Backend (from `server` directory):
+
 ```bash
 npm run dev
 ```
 
 Frontend (from `client` directory):
+
 ```bash
 npm run dev
 ```
 
 The application will be available at:
+
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:5000
 
 ## API Documentation
 
 ### Authentication
+
 - `POST /api/auth/signup` - Register new user
 - `POST /api/auth/login` - Login user
 - `POST /api/auth/logout` - Logout user
 
 ### Questions
+
 - `POST /api/questions` - Create question
 - `GET /api/questions` - Get all questions (exam-scoped)
 - `GET /api/questions/:id` - Get single question
@@ -133,12 +148,14 @@ The application will be available at:
 - `PATCH /api/questions/:id/solve` - Mark question as solved
 
 ### Answers
+
 - `POST /api/questions/:questionId/answers` - Create answer
 - `PATCH /api/answers/:id/vote` - Vote on answer
 - `PATCH /api/answers/:id/accept` - Accept answer
 - `PATCH /api/answers/:id/unaccept` - Unaccept answer
 
 ### Resources
+
 - `POST /api/resources` - Create resource
 - `GET /api/resources` - Get all resources (exam-scoped)
 - `GET /api/resources/:id` - Get single resource
@@ -146,6 +163,7 @@ The application will be available at:
 - `POST /api/resources/:id/save` - Save/unsave resource
 
 ### Search
+
 - `GET /api/search` - Global search
 - `GET /api/search/questions` - Search questions
 - `GET /api/search/resources` - Search resources
@@ -162,6 +180,7 @@ All content is automatically scoped to the user's primary exam:
 4. Frontend contexts are read-only (exam cannot be changed from client)
 
 This ensures:
+
 - Users only see content relevant to their exam
 - No cross-exam content pollution
 - Secure exam enforcement at API level
@@ -169,6 +188,7 @@ This ensures:
 ## Development Status
 
 ### ✅ Completed
+
 - Backend models (User, Question, Answer, Resource)
 - Authentication middleware
 - Exam context middleware
@@ -180,12 +200,14 @@ This ensures:
 - Authentication pages
 
 ### 🚧 In Progress
+
 - Frontend page components
 - API integration
 - Database configuration
 - Seed data
 
 ### 📋 Planned
+
 - Story model and APIs
 - Chat system
 - Report/moderation system

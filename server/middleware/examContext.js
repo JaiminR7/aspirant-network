@@ -1,12 +1,74 @@
+const Exam = require('../models/Exam');
+const Subject = require('../models/Subject');
+const Topic = require('../models/Topic');
 const { getExamEnum } = require('../constants/exams');
 
+const validateExamContext = (req, res, next) => {
+  if (!req.examContext) {
+    return res.status(400).json({ success: false, message: 'Exam context missing' });
+  }
+  next();
+};
+
+const validateSubjectInExam = async (req, res, next) => {
+  try {
+    const subjectId = req.body.subject || req.params.subjectId;
+    if (!subjectId) return res.status(400).json({ success: false, message: 'Subject ID required' });
+
+    const subject = await Subject.findById(subjectId);
+    if (!subject) return res.status(404).json({ success: false, message: 'Subject not found' });
+
+    if (subject.exam.toString() !== req.examContext.toString()) {
+      return res.status(403).json({ success: false, message: 'Subject not in your exam context' });
+    }
+
+    req.subject = subject;
+    next();
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Validation failed' });
+  }
+};
+
+const validateTopicInExam = async (req, res, next) => {
+  try {
+    const topicId = req.body.topic || req.params.topicId;
+    if (!topicId) return res.status(400).json({ success: false, message: 'Topic ID required' });
+
+    const topic = await Topic.findById(topicId).populate('subject');
+    if (!topic) return res.status(404).json({ success: false, message: 'Topic not found' });
+
+    if (topic.exam.toString() !== req.examContext.toString()) {
+      return res.status(403).json({ success: false, message: 'Topic not in your exam context' });
+    }
+
+    req.topic = topic;
+    next();
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Validation failed' });
+  }
+};
+
+const attachExamContext = async (req, res, next) => {
+  try {
+    const examId = req.body.examId || req.params.examId || req.query.examId;
+    if (!examId) return res.status(400).json({ success: false, message: 'Exam ID required' });
+
+    const exam = await Exam.findById(examId);
+    if (!exam || !exam.isActive) return res.status(404).json({ success: false, message: 'Exam not found or inactive' });
+
+    req.examContext = exam._id;
+    req.exam = exam;
+    next();
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to attach exam context' });
+  }
+};
+
 /**
- * Exam Context Enforcement Middleware
+ * Enforce Exam Context
  * 
- * CRITICAL: Enforces that all data access is scoped to the user's primary exam.
- * This middleware prevents users from accessing content from exams they're not enrolled in.
- * 
- * Must be used AFTER auth middleware (requires req.user and req.examContext).
+ * Enforces that users can only access content from their own exam.
+ * Must be used AFTER auth middleware.
  */
 const enforceExamContext = (req, res, next) => {
   try {
@@ -27,8 +89,8 @@ const enforceExamContext = (req, res, next) => {
       });
     }
 
-    // Check request body for exam
-    if (req.body.exam && req.body.exam !== userExam) {
+    // Check request body for exam (only if body exists)
+    if (req.body && req.body.exam && req.body.exam !== userExam) {
       return res.status(403).json({
         success: false,
         message: `Access denied. You can only create content for your exam (${userExam}).`,
@@ -49,6 +111,7 @@ const enforceExamContext = (req, res, next) => {
 
     // Force exam context in request body (if creating/updating content)
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      req.body = req.body || {};
       req.body.exam = userExam;
     }
 
@@ -260,6 +323,13 @@ const validateExamContextForCreation = async (req, res, next) => {
 };
 
 module.exports = {
+  // Old/legacy middleware (kept for backward compatibility)
+  validateExamContext,
+  validateSubjectInExam,
+  validateTopicInExam,
+  attachExamContext,
+  
+  // New middleware
   enforceExamContext,
   validateExamParam,
   injectExamContext,

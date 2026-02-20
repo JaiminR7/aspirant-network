@@ -1,10 +1,19 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
-import App from "./app/App.jsx";
+import { AuthProvider } from "./context/AuthContext";
+import { ExamProvider } from "./context/ExamContext";
+import { ToastProvider } from "./components/ui/toast";
+import AppRouter from "./router/AppRouter";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
-  </StrictMode>
+    <AuthProvider>
+      <ExamProvider>
+        <ToastProvider>
+          <AppRouter />
+        </ToastProvider>
+      </ExamProvider>
+    </AuthProvider>
+  </StrictMode>,
 );

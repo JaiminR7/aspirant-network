@@ -91,10 +91,12 @@ const resourceSchema = new mongoose.Schema({
     thumbnailUrl: String
   },
 
-  // System Tags (Controlled by admin)
+  // System Tags (Controlled by admin) - Predefined tag strings
   systemTags: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Tag'
+    type: String,
+    trim: true,
+    lowercase: true,
+    maxlength: [30, 'System tag cannot exceed 30 characters']
   }],
 
   // User Tags (CRITICAL: Max 3 tags)
@@ -273,67 +275,58 @@ resourceSchema.index({ isHidden: 1 });
 // ==================== MIDDLEWARE ====================
 
 // CRITICAL: Validate that resource's exam matches subject and topic
-resourceSchema.pre('save', async function(next) {
+resourceSchema.pre('save', async function() {
   if (this.isNew || this.isModified('exam') || this.isModified('subject') || this.isModified('topic')) {
-    try {
-      const Subject = mongoose.model('Subject');
-      const Topic = mongoose.model('Topic');
-      
-      const [subject, topic] = await Promise.all([
-        Subject.findById(this.subject),
-        Topic.findById(this.topic)
-      ]);
-      
-      if (!subject) {
-        return next(new Error('Subject not found'));
-      }
-      
-      if (!topic) {
-        return next(new Error('Topic not found'));
-      }
-      
-      // Validate exam matches subject
-      if (subject.exam !== this.exam) {
-        return next(new Error(`Resource exam (${this.exam}) must match subject exam (${subject.exam})`));
-      }
-      
-      // Validate exam matches topic
-      if (topic.exam !== this.exam) {
-        return next(new Error(`Resource exam (${this.exam}) must match topic exam (${topic.exam})`));
-      }
-      
-      // Validate topic belongs to subject
-      if (topic.subject.toString() !== this.subject.toString()) {
-        return next(new Error('Topic does not belong to the selected subject'));
-      }
-      
-      // Auto-populate denormalized fields
-      this.subjectName = subject.name;
-      this.topicName = topic.name;
-      
-      next();
-    } catch (error) {
-      next(error);
+    const Subject = mongoose.model('Subject');
+    const Topic = mongoose.model('Topic');
+    
+    const [subject, topic] = await Promise.all([
+      Subject.findById(this.subject),
+      Topic.findById(this.topic)
+    ]);
+    
+    if (!subject) {
+      throw new Error('Subject not found');
     }
-  } else {
-    next();
+    
+    if (!topic) {
+      throw new Error('Topic not found');
+    }
+    
+    // Validate exam matches subject
+    if (subject.exam !== this.exam) {
+      throw new Error(`Resource exam (${this.exam}) must match subject exam (${subject.exam})`);
+    }
+    
+    // Validate exam matches topic
+    if (topic.exam !== this.exam) {
+      throw new Error(`Resource exam (${this.exam}) must match topic exam (${topic.exam})`);
+    }
+    
+    // Validate topic belongs to subject
+    if (topic.subject.toString() !== this.subject.toString()) {
+      throw new Error('Topic does not belong to the selected subject');
+    }
+    
+    // Auto-populate denormalized fields
+    this.subjectName = subject.name;
+    this.topicName = topic.name;
   }
 });
 
 // Validate content based on type
-resourceSchema.pre('save', function(next) {
+resourceSchema.pre('save', function() {
   if (this.isModified('type') || this.isModified('content')) {
     if (this.type === 'Link' || this.type === 'Video') {
       if (!this.content.externalLink) {
-        return next(new Error('External link is required for Link/Video type'));
+        throw new Error('External link is required for Link/Video type');
       }
     } else {
       if (!this.content.url || !this.content.publicId) {
-        return next(new Error('Cloudinary URL and publicId are required for PDF/Image type'));
+        throw new Error('Cloudinary URL and publicId are required for PDF/Image type');
       }
     }
   }
-  next();
 });
 
 // ==================== INSTANCE METHODS ====================
@@ -597,6 +590,6 @@ resourceSchema.set('toJSON', {
   }
 });
 
-resourceSchema.set('toObject', { virtuals: true });
+  resourceSchema.set('toObject', { virtuals: true });
 
-module.exports = mongoose.model('Resource', resourceSchema);
+  module.exports = mongoose.model('Resource', resourceSchema);

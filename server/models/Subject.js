@@ -80,129 +80,22 @@ const subjectSchema = new mongoose.Schema({
     }
   }
 
-}, {
-  timestamps: true,
-  strict: true,
-  collection: 'subjects'
-});
+}, { timestamps: true, collection: 'subjects' });
 
-// ==================== INDEXES ====================
-
-// Unique subject per exam (prevents duplicate subjects in same exam)
 subjectSchema.index({ exam: 1, name: 1 }, { unique: true });
 subjectSchema.index({ exam: 1, slug: 1 }, { unique: true });
-
-// Query optimization
 subjectSchema.index({ exam: 1, isActive: 1 });
-subjectSchema.index({ isActive: 1 });
-subjectSchema.index({ displayOrder: 1 });
 
-// ==================== MIDDLEWARE ====================
-
-// Auto-generate slug from name before saving
-subjectSchema.pre('save', function(next) {
+subjectSchema.pre('save', function() {
   if (this.isModified('name') && !this.slug) {
-    this.slug = this.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+    this.slug = this.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
-  next();
-});
-
-// Auto-generate slug for topics
-subjectSchema.pre('save', function(next) {
   this.topics.forEach(topic => {
     if (!topic.slug && topic.name) {
-      topic.slug = topic.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
+      topic.slug = topic.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     }
   });
-  next();
 });
-
-// ==================== INSTANCE METHODS ====================
-
-// Add topic to subject
-subjectSchema.methods.addTopic = function(topicName, description = '') {
-  const existingTopic = this.topics.find(t => t.name === topicName);
-  
-  if (!existingTopic) {
-    const slug = topicName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    
-    this.topics.push({ 
-      name: topicName, 
-      slug,
-      description 
-    });
-  }
-  
-  return this.save();
-};
-
-// Remove topic from subject
-subjectSchema.methods.removeTopic = function(topicName) {
-  this.topics = this.topics.filter(t => t.name !== topicName);
-  return this.save();
-};
-
-// Get active topics
-subjectSchema.methods.getActiveTopics = function() {
-  return this.topics.filter(t => t.isActive);
-};
-
-// Get topic names
-subjectSchema.methods.getTopicNames = function() {
-  return this.topics.filter(t => t.isActive).map(t => t.name);
-};
-
-// Increment question count
-subjectSchema.methods.incrementQuestions = function() {
-  this.stats.totalQuestions += 1;
-  return this.save();
-};
-
-// Increment resource count
-subjectSchema.methods.incrementResources = function() {
-  this.stats.totalResources += 1;
-  return this.save();
-};
-
-// ==================== STATIC METHODS ====================
-
-// Get all subjects for a specific exam
-subjectSchema.statics.getByExam = function(exam, activeOnly = true) {
-  const query = { exam };
-  
-  if (activeOnly) {
-    query.isActive = true;
-  }
-  
-  return this.find(query).sort({ displayOrder: 1, name: 1 });
-};
-
-// Get subject by exam and name
-subjectSchema.statics.getByExamAndName = function(exam, subjectName) {
-  return this.findOne({ 
-    exam, 
-    name: subjectName, 
-    isActive: true 
-  });
-};
-
-// Get subject by exam and slug
-subjectSchema.statics.getByExamAndSlug = function(exam, slug) {
-  return this.findOne({ 
-    exam, 
-    slug: slug.toLowerCase(), 
-    isActive: true 
-  });
-};
 
 // Get topics for a subject
 subjectSchema.statics.getTopicsBySubject = async function(exam, subjectName) {
@@ -237,6 +130,9 @@ subjectSchema.virtual('fullName').get(function() {
 
 // URL path
 subjectSchema.virtual('path').get(function() {
+  if (!this.exam) {
+    return `/subjects/${this.slug || this._id}`;
+  }
   return `/exams/${this.exam.toLowerCase()}/subjects/${this.slug}`;
 });
 

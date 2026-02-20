@@ -9,6 +9,7 @@
 ## Tech Stack
 
 ### Frontend
+
 - **React 19** - Component-based UI
 - **Vite** - Fast build tool and dev server
 - **Tailwind CSS** - Utility-first styling
@@ -17,6 +18,7 @@
 - **Axios** - HTTP client
 
 ### Backend
+
 - **Node.js** - JavaScript runtime
 - **Express.js** - Web application framework
 - **Mongoose** - MongoDB ODM with schema validation
@@ -25,6 +27,7 @@
 - **Cloudinary** - File storage (images, PDFs)
 
 ### Database
+
 - **MongoDB** - Document-based NoSQL database
 - **Indexes** - Optimized for exam-scoped queries
 
@@ -35,20 +38,23 @@
 ### 1. **Exam Context Enforcement (Backend-First)**
 
 **Why Backend, Not Frontend?**
+
 - **Security**: Frontend can be bypassed/manipulated by users
 - **Data Integrity**: Backend controls database queries
 - **Single Source of Truth**: Backend validates ALL requests
 - **API Protection**: Direct API calls must respect exam scoping
 
 **Implementation:**
+
 ```javascript
 // Every content query includes exam filter
-Question.find({ exam: user.primaryExam })
-Resource.find({ exam: user.primaryExam })
-Story.find({ exam: user.primaryExam })
+Question.find({ exam: user.primaryExam });
+Resource.find({ exam: user.primaryExam });
+Story.find({ exam: user.primaryExam });
 ```
 
 **Middleware Layer:**
+
 - Extract user's current exam from JWT token
 - Inject exam context into all queries automatically
 - Reject cross-exam data access attempts
@@ -106,6 +112,7 @@ Story.find({ exam: user.primaryExam })
 ### 3. **Data Models**
 
 #### Core Entities
+
 1. **User** - Profile, exam context, credentials
 2. **Question** - Exam-scoped Q&A with tags
 3. **Answer** - Responses with voting
@@ -116,6 +123,7 @@ Story.find({ exam: user.primaryExam })
 8. **Report** - Content moderation
 
 #### Relationships
+
 ```
 User ──┬── (posts) ──> Question ──> (has many) ──> Answer
        │
@@ -131,16 +139,19 @@ User ──┬── (posts) ──> Question ──> (has many) ──> Answer
 ### 4. **Security Model**
 
 #### Authentication
+
 - **JWT tokens** stored in httpOnly cookies or localStorage
 - Token contains: `userId`, `primaryExam`, `level`
 - Token verified on every protected route
 
 #### Authorization
+
 - User can only access content from their current exam
 - Chat requests validated against question ownership
 - Report system prevents abuse
 
 #### Data Protection
+
 - Passwords hashed with bcrypt (10 rounds)
 - Input validation on both frontend and backend
 - XSS prevention (sanitized inputs)
@@ -152,13 +163,14 @@ User ──┬── (posts) ──> Question ──> (has many) ──> Answer
 ### 5. **Exam Scoping Strategy**
 
 #### Database Level
+
 ```javascript
 // All content models include exam field
 {
-  exam: { 
-    type: String, 
-    required: true, 
-    enum: EXAM_VALUES 
+  exam: {
+    type: String,
+    required: true,
+    enum: EXAM_VALUES
   }
 }
 
@@ -167,6 +179,7 @@ questionSchema.index({ exam: 1, subject: 1, topic: 1 });
 ```
 
 #### Middleware Level
+
 ```javascript
 // Inject exam context into all queries
 const examScopeMiddleware = (req, res, next) => {
@@ -176,12 +189,13 @@ const examScopeMiddleware = (req, res, next) => {
 ```
 
 #### Controller Level
+
 ```javascript
 // Every query filters by exam
 const getQuestions = async (req, res) => {
-  const questions = await Question.find({ 
+  const questions = await Question.find({
     exam: req.examContext,
-    subject: req.query.subject 
+    subject: req.query.subject,
   });
 };
 ```
@@ -191,6 +205,7 @@ const getQuestions = async (req, res) => {
 ### 6. **API Design**
 
 #### RESTful Endpoints
+
 ```
 Auth:
 POST   /api/auth/signup
@@ -221,17 +236,19 @@ POST   /api/chat/:id/message   (text-only)
 ### 7. **State Management**
 
 #### Frontend Context
+
 ```javascript
 // ExamContext - Global exam state
 {
-  primaryExam,        // Current exam
-  isOnboardingComplete,
-  userLevel,
-  updateExam()        // Change exam (settings only)
+  primaryExam, // Current exam
+    isOnboardingComplete,
+    userLevel,
+    updateExam(); // Change exam (settings only)
 }
 ```
 
 #### Backend Session
+
 - User's exam stored in JWT
 - Exam change requires re-authentication
 - Ensures backend always has latest exam context
@@ -241,16 +258,19 @@ POST   /api/chat/:id/message   (text-only)
 ### 8. **Scalability Considerations**
 
 #### Database
+
 - **Indexes** on `exam`, `subject`, `topic` for fast filtering
 - **Sharding** by exam type (future)
 - **Connection pooling** for concurrent requests
 
 #### API
+
 - **Pagination** for large result sets
 - **Caching** with Redis (future)
 - **CDN** for static assets (Cloudinary)
 
 #### Code
+
 - **Modular structure** (easy to add new exams)
 - **Reusable middleware** (auth, exam scoping)
 - **Constants-driven** (exams, subjects, tags)
@@ -296,6 +316,7 @@ Chat permanently closed (no reopen)
 ```
 
 **Key Rules:**
+
 - Chat linked to specific Question + Answer
 - No generic DM system
 - Text-only messages
@@ -333,6 +354,7 @@ Chat permanently closed (no reopen)
 ## Deployment Strategy
 
 ### Development
+
 ```
 Frontend: localhost:5173 (Vite)
 Backend:  localhost:5000 (Express)
@@ -340,6 +362,7 @@ Database: MongoDB Atlas (Cloud) or Local
 ```
 
 ### Production
+
 ```
 Frontend: Vercel / Netlify (Static hosting)
 Backend:  AWS EC2 / DigitalOcean (Node.js server)
@@ -371,6 +394,7 @@ Storage:  Cloudinary (Images/PDFs)
 ## Summary
 
 This architecture prioritizes:
+
 1. **Exam context enforcement** at every layer
 2. **Security** through backend validation
 3. **Scalability** through modular design
