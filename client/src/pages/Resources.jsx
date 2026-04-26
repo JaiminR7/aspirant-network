@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { subjectService } from "../services/subjectService";
+import { RESOURCE_TYPES } from "../constants/appConstants";
 import {
   Select,
   SelectContent,
@@ -26,24 +27,30 @@ import {
   Search,
   X,
   Plus,
-  Eye,
+  ThumbsUp,
+  ThumbsDown,
   AlertCircle,
   Filter,
   ChevronDown,
   ChevronUp,
   Sparkles,
 } from "lucide-react";
+import { resourceService } from "../services/resourceService";
+import { postsService } from "../services/postsService";
+import { useToast } from "../components/ui/toast";
 
-const RESOURCE_TYPES = [
-  { value: "PDF", label: "PDF", icon: FileText },
-  { value: "Image", label: "Image", icon: ImageIcon },
-  { value: "Video", label: "Video", icon: Video },
-  { value: "Link", label: "Link", icon: LinkIcon },
-];
+// Icon mapping for resource types
+const RESOURCE_ICONS = {
+  PDF: FileText,
+  Image: ImageIcon,
+  Video: Video,
+  Link: LinkIcon,
+};
 
 const Resources = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { addToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [resources, setResources] = useState([]);
@@ -141,30 +148,15 @@ const Resources = () => {
       setError(null);
 
       // Build query parameters
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: "12",
-      });
+      const params = {};
+      if (filters.subject && filters.subject !== "all") params.subject = filters.subject;
+      if (filters.topic && filters.topic !== "all") params.topic = filters.topic;
+      if (filters.type && filters.type !== "all") params.type = filters.type;
+      if (filters.search) params.search = filters.search;
+      params.page = page.toString();
+      params.limit = "12";
 
-      if (filters.subject) params.append("subject", filters.subject);
-      if (filters.topic) params.append("topic", filters.topic);
-      if (filters.type) params.append("type", filters.type);
-      if (filters.search) params.append("search", filters.search);
-
-      const response = await fetch(
-        `http://localhost:5000/api/resources?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch resources");
-      }
-
-      const data = await response.json();
+      const data = await resourceService.getResources(params);
       setResources(data.resources || []);
       setTotalPages(data.pagination?.totalPages || 1);
       setTotalResources(data.pagination?.total || 0);
@@ -196,38 +188,56 @@ const Resources = () => {
 
   const handleToggleSave = async (resourceId, isSaved) => {
     if (!token) {
-      alert("Please login to save resources");
+      addToast({ title: "Login required", description: "Please login to save resources.", variant: "error" });
       return;
     }
 
+    // Optimistic update
+    setResources((prev) =>
+      prev.map((resource) =>
+        resource._id === resourceId ? { ...resource, isSaved: !isSaved } : resource
+      )
+    );
+
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/resources/${resourceId}/save`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to save resource");
+      if (isSaved) {
+        await postsService.unsavePost(resourceId);
+        addToast({ title: "Removed", description: "Removed from your library.", variant: "default" });
+      } else {
+        await postsService.savePost(resourceId);
+        addToast({ title: "Saved", description: "Saved to your library.", variant: "success" });
       }
-
-      // Update resource in list
+    } catch (error) {
+      // Rollback
       setResources((prev) =>
         prev.map((resource) =>
-          resource._id === resourceId
-            ? { ...resource, isSaved: !isSaved }
-            : resource,
-        ),
+          resource._id === resourceId ? { ...resource, isSaved: isSaved } : resource
+        )
+      );
+      addToast({ title: "Error", description: "Failed to update library.", variant: "error" });
+    }
+  };
+
+  const handleVote = async (resourceId, voteType) => {
+    try {
+      const data = await (voteType === "upvote" 
+        ? resourceService.upvote(resourceId) 
+        : resourceService.downvote(resourceId));
+
+      setResources((prevResources) =>
+        prevResources.map((r) =>
+          r._id === resourceId
+            ? {
+                ...r,
+                upvotes: Array(data.data.totalUpvotes).fill(null),
+                downvotes: Array(data.data.totalDownvotes).fill(null),
+                userVoteStatus: data.data.userVoteStatus,
+              }
+            : r
+        )
       );
     } catch (error) {
-      console.error("Save resource error:", error);
-      alert(error.message || "Failed to save resource");
+      console.error(`Error ${voteType}:`, error);
     }
   };
 
@@ -246,23 +256,7 @@ const Resources = () => {
     setSubmittingRating(true);
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/resources/${selectedResourceForRating._id}/rate`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ rating: ratingValue }),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to rate resource");
-      }
+      const data = await resourceService.rate(selectedResourceForRating._id, ratingValue);
 
       // Update resource in list
       setResources((prev) =>
@@ -290,17 +284,15 @@ const Resources = () => {
   };
 
   const handleResourceClick = (resource) => {
-    // Open resource based on type
     if (resource.type === "Link" || resource.type === "Video") {
       window.open(resource.content.externalLink, "_blank");
     } else if (resource.type === "PDF" || resource.type === "Image") {
-      window.open(resource.content.url, "_blank");
+      navigate(`/resources/${resource._id}/view`);
     }
   };
 
   const getResourceIcon = (type) => {
-    const resourceType = RESOURCE_TYPES.find((t) => t.value === type);
-    return resourceType ? resourceType.icon : FileText;
+    return RESOURCE_ICONS[type] || FileText;
   };
 
   const hasActiveFilters =
@@ -542,13 +534,13 @@ const Resources = () => {
                               e.stopPropagation();
                               handleToggleSave(resource._id, resource.isSaved);
                             }}
-                            className="h-8 w-8 p-0 rounded-full hover:bg-primary/10 hover:text-primary"
+                            className={`h-8 w-8 p-0 rounded-full transition-all duration-300 ${
+                              resource.isSaved 
+                                ? "text-primary bg-primary/10" 
+                                : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                            }`}
                           >
-                            {resource.isSaved ? (
-                              <BookmarkCheck className="w-4 h-4 text-primary" />
-                            ) : (
-                              <Bookmark className="w-4 h-4" />
-                            )}
+                            <Bookmark className={`w-4 h-4 ${resource.isSaved ? "fill-current" : ""}`} />
                           </Button>
                         </div>
 

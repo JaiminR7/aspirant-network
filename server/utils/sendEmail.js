@@ -8,7 +8,6 @@ const nodemailer = require('nodemailer');
  */
 const sendOtpEmail = async (email, otp) => {
   try {
-    // Create transporter using Gmail
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -17,7 +16,6 @@ const sendOtpEmail = async (email, otp) => {
       }
     });
 
-    // Email content
     const mailOptions = {
       from: `"Aspirant Network" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -27,44 +25,12 @@ const sendOtpEmail = async (email, otp) => {
         <html>
           <head>
             <style>
-              body {
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-              }
-              .container {
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-                background-color: #f4f4f4;
-              }
-              .content {
-                background-color: white;
-                padding: 30px;
-                border-radius: 8px;
-              }
-              .otp {
-                font-size: 32px;
-                font-weight: bold;
-                color: #4CAF50;
-                text-align: center;
-                padding: 20px;
-                background-color: #f9f9f9;
-                border-radius: 5px;
-                letter-spacing: 5px;
-                margin: 20px 0;
-              }
-              .warning {
-                color: #ff5722;
-                font-size: 14px;
-                margin-top: 20px;
-              }
-              .footer {
-                text-align: center;
-                margin-top: 20px;
-                font-size: 12px;
-                color: #777;
-              }
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f4; }
+              .content { background-color: white; padding: 30px; border-radius: 8px; }
+              .otp { font-size: 32px; font-weight: bold; color: #4CAF50; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 5px; letter-spacing: 5px; margin: 20px 0; }
+              .warning { color: #ff5722; font-size: 14px; margin-top: 20px; }
+              .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #777; }
             </style>
           </head>
           <body>
@@ -86,7 +52,6 @@ const sendOtpEmail = async (email, otp) => {
       `
     };
 
-    // Send email
     await transporter.sendMail(mailOptions);
   } catch (error) {
     throw new Error(`Failed to send OTP email: ${error.message}`);
@@ -94,12 +59,12 @@ const sendOtpEmail = async (email, otp) => {
 };
 
 /**
- * Send password reset email with reset link
+ * Send password reset OTP email
  * @param {string} email - Recipient email address
- * @param {string} resetToken - Unhashed reset token for URL
+ * @param {string} otp - 6-digit OTP
  * @returns {Promise<void>}
  */
-const sendPasswordResetEmail = async (email, resetToken) => {
+const sendPasswordResetOtpEmail = async (email, otp) => {
   try {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -109,79 +74,40 @@ const sendPasswordResetEmail = async (email, resetToken) => {
       }
     });
 
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
-
     const mailOptions = {
       from: `"Aspirant Network" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Password Reset Request',
+      subject: 'Password Reset OTP - Aspirant Network',
       html: `
         <!DOCTYPE html>
         <html>
           <head>
             <style>
-              body {
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
-              }
-              .container {
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-                background-color: #f4f4f4;
-              }
-              .content {
-                background-color: white;
-                padding: 30px;
-                border-radius: 8px;
-              }
-              .button {
-                display: inline-block;
-                padding: 12px 30px;
-                background-color: #4CAF50;
-                color: white;
-                text-decoration: none;
-                border-radius: 5px;
-                margin: 20px 0;
-                font-weight: bold;
-              }
-              .warning {
-                color: #ff5722;
-                font-size: 14px;
-                margin-top: 20px;
-                padding: 15px;
-                background-color: #fff3e0;
-                border-left: 4px solid #ff5722;
-                border-radius: 4px;
-              }
-              .footer {
-                text-align: center;
-                margin-top: 20px;
-                font-size: 12px;
-                color: #777;
-              }
-              .link {
-                color: #4CAF50;
-                word-break: break-all;
-              }
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f4; }
+              .content { background-color: white; padding: 30px; border-radius: 8px; }
+              .otp { font-size: 32px; font-weight: bold; color: #4CAF50; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 5px; letter-spacing: 5px; margin: 20px 0; }
+              .warning { color: #ff5722; font-size: 14px; margin-top: 20px; padding: 15px; background-color: #fff3e0; border-left: 4px solid #ff5722; border-radius: 4px; }
+              .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #777; }
             </style>
           </head>
           <body>
             <div class="container">
               <div class="content">
-                <h2>Password Reset Request</h2>
-                <p>You requested to reset your password for your Aspirant Network account.</p>
-                <p>Click the button below to reset your password:</p>
-                <a href="${resetUrl}" class="button">Reset Password</a>
-                <p>Or copy and paste this link in your browser:</p>
-                <p class="link">${resetUrl}</p>
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #4CAF50; margin-bottom: 5px;">Aspirant Network</h2>
+                  <p style="color: #666; margin-top: 0;">Your Learning Community</p>
+                </div>
+                <h2>Password Reset OTP</h2>
+                <p>Hello,</p>
+                <p>We received a request to reset the password for your Aspirant Network account. Use the code below to proceed:</p>
+                <div class="otp">${otp}</div>
                 <div class="warning">
-                  <strong>⚠️ Important:</strong>
+                  <strong>⚠️ Security Notice:</strong>
                   <ul style="margin: 10px 0; padding-left: 20px;">
-                    <li>This link is valid for <strong>15 minutes</strong> only</li>
-                    <li>If you didn't request this, please ignore this email</li>
-                    <li>Your password will remain unchanged until you create a new one</li>
+                    <li>This OTP is valid for <strong>10 minutes</strong> only.</li>
+                    <li>If you did not request a password reset, please ignore this email.</li>
+                    <li>Never share this code with anyone.</li>
                   </ul>
                 </div>
                 <div class="footer">
@@ -196,8 +122,8 @@ const sendPasswordResetEmail = async (email, resetToken) => {
 
     await transporter.sendMail(mailOptions);
   } catch (error) {
-    throw new Error(`Failed to send password reset email: ${error.message}`);
+    throw new Error(`Failed to send password reset OTP: ${error.message}`);
   }
 };
 
-module.exports = { sendOtpEmail, sendPasswordResetEmail };
+module.exports = { sendOtpEmail, sendPasswordResetOtpEmail };

@@ -17,7 +17,6 @@ import {
   Lock,
   CheckCircle,
   AlertCircle,
-  Eye,
   Heart,
   Settings,
   Link as LinkIcon,
@@ -25,12 +24,22 @@ import {
   Sparkles,
   MoreHorizontal,
   Trash2,
+  Bookmark,
 } from "lucide-react";
+import { postsService } from "../services/postsService";
+import { userService } from "../services/userService";
+import { questionService } from "../services/questionService";
+import { answerService } from "../services/answerService";
+import { resourceService } from "../services/resourceService";
+import { storyService } from "../services/storyService";
+import { formatDate } from "../utils/dateUtils";
 
 const ACTIVITY_TABS = [
   { id: "questions", label: "Questions", icon: MessageSquare },
   { id: "answers", label: "Answers", icon: FileText },
   { id: "resources", label: "Resources", icon: BookOpen },
+  { id: "stories", label: "Stories", icon: Heart },
+  { id: "saved", label: "Saved", icon: Bookmark, private: true },
 ];
 
 const Profile = () => {
@@ -47,11 +56,13 @@ const Profile = () => {
   const [activeTab, setActiveTab] = useState("questions");
   const [activityData, setActivityData] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [savedFilter, setSavedFilter] = useState("all");
 
   // Stats counts
   const [questionCount, setQuestionCount] = useState(0);
   const [answerCount, setAnswerCount] = useState(0);
   const [resourceCount, setResourceCount] = useState(0);
+  const [storyCount, setStoryCount] = useState(0);
 
   // If no username in URL, use current user's username
   const targetUsername = username || currentUser?.username;
@@ -72,7 +83,7 @@ const Profile = () => {
     ) {
       fetchActivity();
     }
-  }, [activeTab, profileUser]);
+  }, [activeTab, profileUser, savedFilter]);
 
   // Fetch counts for all tabs when profile loads
   useEffect(() => {
@@ -89,38 +100,25 @@ const Profile = () => {
     if (!userId) return;
 
     try {
-      // Fetch counts for all tabs in parallel
-      const [questionsRes, answersRes, resourcesRes] = await Promise.all([
-        fetch(
-          `http://localhost:5000/api/questions?createdBy=${userId}&limit=1`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        ),
-        fetch(`http://localhost:5000/api/answers?author=${userId}&limit=1`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(
-          `http://localhost:5000/api/resources?uploadedBy=${userId}&limit=1`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        ),
-      ]);
-
-      const [questionsData, answersData, resourcesData] = await Promise.all([
-        questionsRes.ok
-          ? questionsRes.json()
-          : { data: [], pagination: { total: 0 } },
-        answersRes.ok ? answersRes.json() : { data: [] },
-        resourcesRes.ok ? resourcesRes.json() : { data: [] },
-      ]);
+      // Fetch counts for all tabs in parallel using centralized services
+      const [questionsData, answersData, resourcesData, storiesData] =
+        await Promise.all([
+          questionService.getQuestions({ createdBy: userId, limit: 1 }),
+          answerService.getAnswersByUser(userId, { limit: 1 }),
+          resourceService.getResources({ uploadedBy: userId, limit: 1 }),
+          storyService.getStories({ author: userId, limit: 1 }),
+        ]);
 
       setQuestionCount(
-        questionsData.pagination?.total || questionsData.data?.length || 0,
+        questionsData.pagination?.total ?? questionsData.data?.length ?? 0,
       );
-      setAnswerCount(answersData.data?.length || 0);
-      setResourceCount(resourcesData.data?.length || 0);
+      setAnswerCount(answersData.pagination?.total ?? answersData.data?.length ?? 0);
+      setResourceCount(
+        resourcesData.pagination?.total ?? resourcesData.data?.length ?? 0,
+      );
+      setStoryCount(
+        storiesData.pagination?.total ?? storiesData.data?.length ?? 0,
+      );
     } catch (error) {
       console.error("Error fetching counts:", error);
     }
@@ -140,23 +138,7 @@ const Profile = () => {
       }
 
       // Try to fetch from API for other users' profiles
-      const response = await fetch(
-        `http://localhost:5000/api/users/${targetUsername}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("User not found");
-        }
-        throw new Error("Failed to fetch profile");
-      }
-
-      const data = await response.json();
+      const data = await userService.getProfile(targetUsername);
       setProfileUser(data.user);
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -182,38 +164,30 @@ const Profile = () => {
         return;
       }
 
-      let endpoint = "";
+      let data;
+      const params = { limit: 50 }; // Get recent activity
+      
       switch (activeTab) {
         case "questions":
-          // Use actualCreator to include anonymous questions
-          endpoint = `http://localhost:5000/api/questions?createdBy=${userId}`;
+          data = await questionService.getQuestions({ createdBy: userId, ...params });
           break;
         case "answers":
-          endpoint = `http://localhost:5000/api/answers?author=${userId}`;
+          data = await answerService.getAnswersByUser(userId, params);
           break;
         case "resources":
-          endpoint = `http://localhost:5000/api/resources?uploadedBy=${userId}`;
+          data = await resourceService.getResources({ uploadedBy: userId, ...params });
           break;
+        case "stories":
+          data = await storyService.getStories({ author: userId, ...params });
+          break;
+        case "saved":
+          const savedData = await postsService.getSavedPosts(savedFilter);
+          setActivityData(savedData.data || []);
+          setActivityLoading(false);
+          return;
         default:
           return;
       }
-
-      console.log("🌐 Fetching from:", endpoint);
-
-      const response = await fetch(endpoint, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      console.log("📡 Response status:", response.status);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch activity");
-      }
-
-      const data = await response.json();
-      console.log("✅ Activity data received:", data);
 
       setActivityData(data.data || []);
     } catch (error) {
@@ -226,32 +200,41 @@ const Profile = () => {
 
   const handleDelete = async (itemId, e) => {
     e.stopPropagation();
+    console.log(`[handleDelete] Action on item: ${itemId}, Tab: ${activeTab}`);
 
     try {
-      let endpoint = "";
+      if (activeTab === "saved") {
+        console.log(`[handleDelete] Unsaving post: ${itemId}`);
+        await postsService.unsavePost(itemId);
+        setActivityData((prev) => {
+          const next = prev.filter((item) => item._id !== itemId);
+          console.log(`[handleDelete] New state count: ${next.length}`);
+          return next;
+        });
+        addToast({
+          title: "Removed from library",
+          description: "This item has been removed from your saved list.",
+          variant: "default",
+          duration: 3000,
+        });
+        return;
+      }
+
       switch (activeTab) {
         case "questions":
-          endpoint = `http://localhost:5000/api/questions/${itemId}`;
+          await questionService.delete(itemId);
           break;
         case "answers":
-          endpoint = `http://localhost:5000/api/answers/${itemId}`;
+          await answerService.delete(itemId);
           break;
         case "resources":
-          endpoint = `http://localhost:5000/api/resources/${itemId}`;
+          await resourceService.delete(itemId);
+          break;
+        case "stories":
+          await storyService.delete(itemId);
           break;
         default:
           return;
-      }
-
-      const response = await fetch(endpoint, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete");
       }
 
       // Remove item from state
@@ -268,6 +251,9 @@ const Profile = () => {
         case "resources":
           setResourceCount((prev) => Math.max(0, prev - 1));
           break;
+        case "stories":
+          setStoryCount((prev) => Math.max(0, prev - 1));
+          break;
       }
 
       addToast({
@@ -279,8 +265,8 @@ const Profile = () => {
     } catch (error) {
       console.error("Error deleting item:", error);
       addToast({
-        title: "Delete failed",
-        description: "Failed to delete. Please try again.",
+        title: "Action failed",
+        description: `Failed to ${activeTab === "saved" ? "unsave" : "delete"}. Please try again.`,
         variant: "error",
         duration: 3000,
       });
@@ -293,21 +279,7 @@ const Profile = () => {
     const action = currentStatus ? "unmark" : "mark";
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/questions/${questionId}/solve`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to update question");
-      }
+      await questionService.toggleSolve(questionId);
 
       // Update the question in state
       setActivityData((prev) =>
@@ -337,13 +309,22 @@ const Profile = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+  const resolveOwnerId = (item) => {
+    if (!item) return null;
+    if (typeof item.user === "string") return item.user;
+    if (typeof item.createdBy === "string") return item.createdBy;
+    if (item.user?._id) return item.user._id;
+    if (item.createdBy?._id) return item.createdBy._id;
+    return null;
   };
+
+  const canDeleteItem = (item) => {
+    if (!isOwnProfile) return false;
+    if (activeTab !== "resources") return true;
+    const ownerId = resolveOwnerId(item);
+    return !!ownerId && ownerId === currentUser?._id;
+  };
+
 
   const getCredibilityColor = (score) => {
     if (score >= 100) return "text-emerald-500";
@@ -490,6 +471,14 @@ const Profile = () => {
               <span className="text-muted-foreground">Answers</span>
             </div>
             <div className="flex items-center gap-1">
+              <span className="font-bold text-foreground">{resourceCount}</span>
+              <span className="text-muted-foreground">Resources</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="font-bold text-foreground">{storyCount}</span>
+              <span className="text-muted-foreground">Stories</span>
+            </div>
+            <div className="flex items-center gap-1">
               <span
                 className={`font-bold ${getCredibilityColor(profileUser?.credibilityScore)}`}
               >
@@ -523,25 +512,44 @@ const Profile = () => {
         <>
           <div className="border-b border-border">
             <div className="flex">
-              {ACTIVITY_TABS.map((tab) => {
+              {ACTIVITY_TABS.filter(tab => !tab.private || isOwnProfile).map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 border-b-2 transition-colors ${
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 border-b-2 transition-all ${
                       activeTab === tab.id
-                        ? "border-primary text-primary font-semibold"
-                        : "border-transparent text-muted-foreground"
+                        ? "border-primary text-primary font-bold bg-primary/5"
+                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/30"
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className={`w-4 h-4 ${activeTab === tab.id ? "animate-pulse" : ""}`} />
                     <span className="hidden sm:inline">{tab.label}</span>
                   </button>
                 );
               })}
             </div>
           </div>
+
+          {/* Segmented Filter for Saved Tab */}
+          {activeTab === "saved" && (
+            <div className="px-4 py-4 flex items-center gap-2 overflow-x-auto no-scrollbar border-b border-border/40 bg-secondary/10">
+              {["all", "question", "resource", "story"].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setSavedFilter(filter)}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
+                    savedFilter === filter
+                      ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
+                      : "bg-background text-muted-foreground border-border/60 hover:border-primary/40"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Activity Content */}
           {activityLoading ? (
@@ -567,159 +575,216 @@ const Profile = () => {
               <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
                 <FileText className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground">
-                No {activeTab} to display yet
+              <p className="text-muted-foreground font-medium">
+                {activeTab === "saved" 
+                  ? "Your study library is empty. Save content to see it here." 
+                  : `No ${activeTab} to display yet`}
               </p>
             </div>
           ) : (
             <div className="space-y-0">
-              {activityData.map((item) => (
-                <article
-                  key={item._id}
-                  className="border-b border-border px-4 py-4 cursor-pointer"
-                  onClick={() => {
-                    if (activeTab === "questions") {
-                      navigate(`/questions/${item._id}`);
-                    } else if (activeTab === "answers" && item.question) {
-                      navigate(
-                        `/questions/${item.question._id || item.question}`,
-                      );
-                    } else if (activeTab === "resources") {
-                      window.open(item.url || item.externalLink, "_blank");
-                    }
-                  }}
-                >
-                  <div className="flex gap-3">
-                    {/* Author Avatar */}
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground text-sm font-bold flex-shrink-0">
-                      {profileUser?.name?.charAt(0).toUpperCase() || "U"}
-                    </div>
+              {activityData.map((item) => {
+                const storyTypeKey = (item.storyType || "").toLowerCase();
+                const visibleStoryTags = (item.tags || []).filter(
+                  (tag) => tag?.toLowerCase() !== storyTypeKey,
+                );
 
-                    <div className="flex-1 min-w-0">
-                      {/* Header */}
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">
-                            {profileUser?.name}
-                          </span>
-                          <span className="text-muted-foreground">
-                            @{profileUser?.username}
-                          </span>
-                          <span className="text-muted-foreground">·</span>
-                          <span className="text-muted-foreground text-sm">
-                            {formatDate(item.createdAt)}
-                          </span>
-                        </div>
-                        {isOwnProfile && (
-                          <div className="flex items-center gap-1">
-                            {activeTab === "questions" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`h-8 px-3 text-xs ${
-                                  item.isSolved
-                                    ? "text-yellow-700 hover:bg-yellow-50"
-                                    : "text-yellow-600 hover:bg-yellow-50"
-                                }`}
-                                onClick={(e) =>
-                                  handleMarkSolved(item._id, item.isSolved, e)
-                                }
-                              >
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                {item.isSolved ? "Unmark" : "Mark Solved"}
-                              </Button>
+                return (
+                  <article
+                    key={item._id}
+                    className="border-b border-border px-4 py-4 cursor-pointer"
+                    onClick={() => {
+                      if (activeTab === "saved") {
+                        const targetId = item.sourceId || item._id;
+                        if (item.type === "question") navigate(`/question/${targetId}`);
+                        else if (item.type === "resource") navigate(`/resources/${targetId}/view`);
+                        else if (item.type === "story") navigate(`/stories/${targetId}`);
+                      } else if (activeTab === "questions") {
+                        navigate(`/question/${item._id}`);
+                      } else if (activeTab === "answers" && item.question) {
+                        navigate(
+                          `/question/${item.question._id || item.question}`,
+                        );
+                      } else if (activeTab === "resources") {
+                        navigate(`/resources/${item._id}/view`);
+                      } else if (activeTab === "stories") {
+                        navigate(`/stories/${item._id}`);
+                      }
+                    }}
+                  >
+                    <div className="flex gap-3">
+                      {/* Author Avatar */}
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground text-sm font-bold flex-shrink-0">
+                        {activeTab === "stories" && item.isAnonymous
+                          ? "A"
+                          : profileUser?.name?.charAt(0).toUpperCase() || "U"}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-foreground">
+                              {activeTab === "stories" && item.isAnonymous
+                                ? "Anonymous"
+                                : profileUser?.name}
+                            </span>
+                            {!(activeTab === "stories" && item.isAnonymous) && (
+                              <span className="text-muted-foreground">
+                                @{profileUser?.username}
+                              </span>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                              onClick={(e) => handleDelete(item._id, e)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground text-sm">
+                              {formatDate(item.createdAt)}
+                            </span>
                           </div>
-                        )}
-                      </div>
-
-                      {/* Title */}
-                      <h3 className="text-foreground font-medium mb-1 line-clamp-2">
-                        {activeTab === "answers" && item.question
-                          ? `Answer to: ${item.question.title || "Question"}`
-                          : item.title}
-                      </h3>
-
-                      {/* Description */}
-                      <p className="text-muted-foreground text-sm line-clamp-2 mb-3">
-                        {item.description || item.content || ""}
-                      </p>
-
-                      {/* Tags */}
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {item.subjectName && (
-                          <Badge className="rounded-full text-xs px-3 py-1 bg-blue-50 text-blue-600 border-0 font-medium">
-                            {item.subjectName}
-                          </Badge>
-                        )}
-                        {item.topicName && (
-                          <Badge className="rounded-full text-xs px-3 py-1 bg-green-50 text-green-600 border-0 font-medium">
-                            {item.topicName}
-                          </Badge>
-                        )}
-                        {item.systemTags && item.systemTags.length > 0 && (
-                          <>
-                            {item.systemTags.slice(0, 3).map((tag, idx) => (
-                              <Badge
-                                key={idx}
-                                className="rounded-full text-xs px-3 py-1 bg-emerald-50 text-emerald-600 border-0 font-medium"
-                              >
-                                #{tag}
-                              </Badge>
-                            ))}
-                          </>
-                        )}
-                        {item.userTags && item.userTags.length > 0 && (
-                          <>
-                            {item.userTags.slice(0, 2).map((tag, idx) => (
-                              <Badge
-                                key={`user-${idx}`}
-                                className="rounded-full text-xs px-3 py-1 bg-slate-100 text-slate-700 border-0 font-medium"
-                              >
-                                #{tag}
-                              </Badge>
-                            ))}
-                          </>
-                        )}
-                      </div>
-
-                      {/* Stats */}
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1 hover:text-primary transition-colors">
-                          <ThumbsUp className="w-4 h-4" />
-                          <span>{item.upvotes || 0}</span>
+                          {canDeleteItem(item) && (
+                            <div className="flex items-center gap-1">
+                              {activeTab === "questions" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`h-8 px-3 text-xs ${
+                                    item.isSolved
+                                      ? "text-yellow-700 hover:bg-yellow-50"
+                                      : "text-yellow-600 hover:bg-yellow-50"
+                                  }`}
+                                  onClick={(e) =>
+                                    handleMarkSolved(item._id, item.isSolved, e)
+                                  }
+                                >
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  {item.isSolved ? "Unmark" : "Mark Solved"}
+                                </Button>
+                              )}
+                              {activeTab === "saved" ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-primary hover:bg-primary/10"
+                                  onClick={(e) => handleDelete(item._id, e)}
+                                  title="Remove from saved"
+                                >
+                                  <Bookmark className="w-4 h-4 fill-current" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                  onClick={(e) => handleDelete(item._id, e)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {item.views !== undefined && (
-                          <div className="flex items-center gap-1">
-                            <Eye className="w-4 h-4" />
-                            <span>{item.views}</span>
-                          </div>
-                        )}
-                        {item.answerCount !== undefined && (
+
+                        {/* Title */}
+                        <h3 className="text-foreground font-medium mb-1 line-clamp-2">
+                          {activeTab === "answers" && item.question
+                            ? `Answer to: ${item.question.title || "Question"}`
+                            : item.title}
+                        </h3>
+
+                        {/* Description */}
+                        <p className="text-muted-foreground text-sm line-clamp-2 mb-3">
+                          {item.description ||
+                            item.excerpt ||
+                            item.content ||
+                            ""}
+                        </p>
+
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {activeTab === "stories" && item.storyType && (
+                            <Badge className="rounded-full text-xs px-3 py-1 bg-indigo-50 text-indigo-600 border-0 font-medium">
+                              {item.storyType}
+                            </Badge>
+                          )}
+                          {activeTab === "stories" &&
+                            visibleStoryTags.length > 0 && (
+                              <>
+                                {visibleStoryTags
+                                  .slice(0, 3)
+                                  .map((tag, idx) => (
+                                    <Badge
+                                      key={`story-tag-${idx}`}
+                                      className="rounded-full text-xs px-3 py-1 bg-violet-50 text-violet-700 border-0 font-medium"
+                                    >
+                                      #{tag}
+                                    </Badge>
+                                  ))}
+                              </>
+                            )}
+                          {item.subjectName && (
+                            <Badge className="rounded-full text-xs px-3 py-1 bg-blue-50 text-blue-600 border-0 font-medium">
+                              {item.subjectName}
+                            </Badge>
+                          )}
+                          {item.topicName && (
+                            <Badge className="rounded-full text-xs px-3 py-1 bg-green-50 text-green-600 border-0 font-medium">
+                              {item.topicName}
+                            </Badge>
+                          )}
+                          {item.systemTags && item.systemTags.length > 0 && (
+                            <>
+                              {item.systemTags.slice(0, 3).map((tag, idx) => (
+                                <Badge
+                                  key={idx}
+                                  className="rounded-full text-xs px-3 py-1 bg-emerald-50 text-emerald-600 border-0 font-medium"
+                                >
+                                  #{tag}
+                                </Badge>
+                              ))}
+                            </>
+                          )}
+                          {item.userTags && item.userTags.length > 0 && (
+                            <>
+                              {item.userTags.slice(0, 2).map((tag, idx) => (
+                                <Badge
+                                  key={`user-${idx}`}
+                                  className="rounded-full text-xs px-3 py-1 bg-slate-100 text-slate-700 border-0 font-medium"
+                                >
+                                  #{tag}
+                                </Badge>
+                              ))}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Stats */}
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1 hover:text-primary transition-colors">
-                            <MessageSquare className="w-4 h-4" />
-                            <span>{item.answerCount}</span>
+                            <ThumbsUp className="w-4 h-4" />
+                            <span>{item.likesCount ?? item.upvotes ?? 0}</span>
                           </div>
-                        )}
-                        {item.isSolved && (
-                          <Badge className="rounded-full bg-yellow-50 text-yellow-700 border-0 font-medium text-xs px-2 py-0.5">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Solved
-                          </Badge>
-                        )}
+                          {item.answerCount !== undefined && (
+                            <div className="flex items-center gap-1 hover:text-primary transition-colors">
+                              <MessageSquare className="w-4 h-4" />
+                              <span>{item.answerCount}</span>
+                            </div>
+                          )}
+                          {activeTab === "stories" && (
+                            <div className="flex items-center gap-1 hover:text-primary transition-colors">
+                              <MessageSquare className="w-4 h-4" />
+                              <span>{item.commentsCount || 0}</span>
+                            </div>
+                          )}
+                          {item.isSolved && (
+                            <Badge className="rounded-full bg-yellow-50 text-yellow-700 border-0 font-medium text-xs px-2 py-0.5">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Solved
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </>

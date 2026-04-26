@@ -40,17 +40,17 @@ export const ToastProvider = ({ children }) => {
 
 const Toast = ({ id, title, description, variant = "default", onClose }) => {
   const variants = {
-    default: "bg-white border-gray-200",
-    success: "bg-emerald-50 border-emerald-200",
-    error: "bg-red-50 border-red-200",
-    warning: "bg-yellow-50 border-yellow-200",
+    default: "bg-card border-border",
+    success: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50",
+    error: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50",
+    warning: "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800/50",
   };
 
   const iconColors = {
-    default: "text-gray-600",
-    success: "text-emerald-600",
-    error: "text-red-600",
-    warning: "text-yellow-600",
+    default: "text-foreground",
+    success: "text-emerald-600 dark:text-emerald-400",
+    error: "text-red-600 dark:text-red-400",
+    warning: "text-yellow-600 dark:text-yellow-400",
   };
 
   return (
@@ -65,10 +65,10 @@ const Toast = ({ id, title, description, variant = "default", onClose }) => {
             </div>
           )}
           {description && (
-            <div className="text-sm text-gray-600">{description}</div>
+            <div className="text-sm text-muted-foreground">{description}</div>
           )}
         </div>
-        <button onClick={onClose} className="text-gray-400">
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
           <X className="h-4 w-4" />
         </button>
       </div>

@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
+import PostTypeBadge from "../components/post/PostTypeBadge";
 import {
   MessageSquare,
   ThumbsUp,
   ThumbsDown,
-  Eye,
   CheckCircle2,
   Clock,
   User,
@@ -22,16 +22,26 @@ import {
   Bookmark,
   Share2,
 } from "lucide-react";
+import { postsService } from "../services/postsService";
+import { useToast } from "../components/ui/toast";
+import { questionService } from "../services/questionService";
+import { answerService } from "../services/answerService";
+import { formatRelativeTime } from "../utils/dateUtils";
+
+const POST_CACHE = new Map();
+const COMMENTS_CACHE = new Map();
 
 const QuestionDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { addToast } = useToast();
+  const perfRef = useRef({ start: 0 });
 
-  const [question, setQuestion] = useState(null);
-  const [answers, setAnswers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingAnswers, setLoadingAnswers] = useState(true);
+  const [question, setQuestion] = useState(POST_CACHE.get(id) || null);
+  const [answers, setAnswers] = useState(COMMENTS_CACHE.get(id) || []);
+  const [loading, setLoading] = useState(!POST_CACHE.has(id));
+  const [loadingAnswers, setLoadingAnswers] = useState(!COMMENTS_CACHE.has(id));
   const [error, setError] = useState(null);
 
   // Answer form state
@@ -42,71 +52,64 @@ const QuestionDetail = () => {
 
   // Mark solved state
   const [markingSolved, setMarkingSolved] = useState(false);
+  const [savePending, setSavePending] = useState(false);
 
-  useEffect(() => {
-    fetchQuestion();
-    fetchAnswers();
-  }, [id]);
+  const fetchData = async () => {
+    perfRef.current.start = performance.now();
+    const isDev = import.meta.env.DEV;
+    if (isDev) console.log(`[PERF] QuestionDetail navigation start: ${id}`);
 
-  const fetchQuestion = async () => {
-    try {
+    if (!POST_CACHE.has(id)) {
       setLoading(true);
-      setError(null);
+    }
+    setError(null);
 
-      const response = await fetch(
-        `http://localhost:5000/api/questions/${id}`,
-        {
-          headers: token
-            ? {
-                Authorization: `Bearer ${token}`,
-              }
-            : {},
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch question");
+    try {
+      const qStart = performance.now();
+      const data = await questionService.getById(id);
+      
+      if (isDev) {
+        console.log(`[PERF] Question API time: ${(performance.now() - qStart).toFixed(2)}ms`);
       }
+      
+      const fetchedQuestion = data.data || data.question;
+      setQuestion(fetchedQuestion);
+      POST_CACHE.set(id, fetchedQuestion);
+      setLoading(false);
 
-      const data = await response.json();
-      console.log("Question data received:", data);
-      setQuestion(data.data || data.question);
-    } catch (error) {
-      console.error("Error fetching question:", error);
-      setError(error.message || "Failed to load question");
-    } finally {
+      fetchAnswers(id);
+    } catch (err) {
+      if (!question) {
+        setError(err.message || "Failed to load question");
+      }
       setLoading(false);
     }
   };
 
-  const fetchAnswers = async () => {
+  const fetchAnswers = async (questionId) => {
+    const isDev = import.meta.env.DEV;
+    const start = performance.now();
     try {
-      setLoadingAnswers(true);
-
-      const response = await fetch(
-        `http://localhost:5000/api/questions/${id}/answers`,
-        {
-          headers: token
-            ? {
-                Authorization: `Bearer ${token}`,
-              }
-            : {},
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch answers");
+      const data = await answerService.getAnswersByQuestion(questionId);
+      const fetchedAnswers = data.data || data.answers || [];
+      
+      if (isDev) {
+        console.log(`[PERF] Answers fetch time: ${(performance.now() - start).toFixed(2)}ms`);
+        console.log(`[PERF] Total Question render ready: ${(performance.now() - perfRef.current.start).toFixed(2)}ms`);
       }
 
-      const data = await response.json();
-      console.log("Answers data received:", data);
-      setAnswers(data.data || data.answers || []);
-    } catch (error) {
-      console.error("Error fetching answers:", error);
+      setAnswers(fetchedAnswers);
+      COMMENTS_CACHE.set(questionId, fetchedAnswers);
+    } catch (err) {
+      console.warn("[QuestionDetail] Answers failed to load", err);
     } finally {
       setLoadingAnswers(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, [id]);
 
   const handleSubmitAnswer = async (e) => {
     e.preventDefault();
@@ -130,31 +133,16 @@ const QuestionDetail = () => {
     setSubmittingAnswer(true);
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/questions/${id}/answers`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            content: answerContent.trim(),
-          }),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to submit answer");
-      }
+      await answerService.create({
+        questionId: id,
+        content: answerContent.trim(),
+      });
 
       // Clear form
       setAnswerContent("");
 
       // Refresh answers
-      await fetchAnswers();
+      await fetchAnswers(id);
 
       // Scroll to answers section
       document.getElementById("answers-section")?.scrollIntoView({
@@ -176,21 +164,7 @@ const QuestionDetail = () => {
     setMarkingSolved(true);
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/questions/${id}/solve`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to mark as solved");
-      }
+      await questionService.toggleSolve(id);
 
       // Update question state
       setQuestion((prev) => ({
@@ -206,59 +180,176 @@ const QuestionDetail = () => {
     }
   };
 
+  const handleSave = async () => {
+    if (!token) {
+      addToast({ title: "Login required", description: "Please login to save questions.", variant: "error" });
+      return;
+    }
+    if (savePending) return;
+
+    const previousState = question.isSaved;
+    setQuestion(prev => ({ ...prev, isSaved: !previousState }));
+    setSavePending(true);
+
+    try {
+      if (previousState) {
+        await postsService.unsavePost(id);
+        addToast({ title: "Removed", description: "Question removed from your library.", variant: "default" });
+      } else {
+        await postsService.savePost(id);
+        addToast({ title: "Saved", description: "Added to your private study collection.", variant: "success" });
+      }
+    } catch (error) {
+      setQuestion(prev => ({ ...prev, isSaved: previousState }));
+      addToast({ title: "Error", description: "Failed to update library. Try again.", variant: "error" });
+    } finally {
+      setSavePending(false);
+    }
+  };
+
   const handleVote = async (type, targetType, targetId) => {
     if (!token) {
       alert("Please login to vote");
       return;
     }
 
-    try {
-      const endpoint =
-        targetType === "question"
-          ? `http://localhost:5000/api/questions/${targetId}/vote`
-          : `http://localhost:5000/api/answers/${targetId}/vote`;
-
-      const response = await fetch(endpoint, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ voteType: type }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to vote");
-      }
-
-      // Refresh question or answers based on targetType
-      if (targetType === "question") {
-        await fetchQuestion();
+    if (targetType === "question") {
+      // --- Optimistic update for question ---
+      const savedQ = {
+        likesCount: question.likesCount,
+        dislikesCount: question.dislikesCount,
+        userVoteStatus: question.userVoteStatus,
+      };
+      const wasUpvoted = savedQ.userVoteStatus === "upvoted";
+      const wasDownvoted = savedQ.userVoteStatus === "downvoted";
+      let nextLikes = savedQ.likesCount ?? 0;
+      let nextDislikes = savedQ.dislikesCount ?? 0;
+      let nextStatus;
+      if (type === "upvote") {
+        if (wasUpvoted) {
+          nextLikes -= 1;
+          nextStatus = "none";
+        } else {
+          nextLikes += 1;
+          if (wasDownvoted) nextDislikes -= 1;
+          nextStatus = "upvoted";
+        }
       } else {
-        await fetchAnswers();
+        if (wasDownvoted) {
+          nextDislikes -= 1;
+          nextStatus = "none";
+        } else {
+          nextDislikes += 1;
+          if (wasUpvoted) nextLikes -= 1;
+          nextStatus = "downvoted";
+        }
       }
-    } catch (error) {
-      console.error("Vote error:", error);
-      alert(error.message || "Failed to vote");
+      setQuestion((q) => ({
+        ...q,
+        likesCount: nextLikes,
+        dislikesCount: nextDislikes,
+        userVoteStatus: nextStatus,
+      }));
+      try {
+        const res = await fetch(
+          `http://localhost:5000/api/questions/${targetId}/${type}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Failed to vote");
+        setQuestion((q) => ({
+          ...q,
+          likesCount: data.data.likesCount,
+          dislikesCount: data.data.dislikesCount,
+          userVoteStatus: data.data.userVoteStatus,
+        }));
+      } catch {
+        setQuestion((q) => ({ ...q, ...savedQ }));
+      }
+    } else {
+      // --- Optimistic update for answer ---
+      const answer = answers.find((a) => a._id === targetId);
+      if (!answer) return;
+      const savedA = {
+        upvotes: answer.upvotes,
+        downvotes: answer.downvotes,
+        userVoteStatus: answer.userVoteStatus,
+      };
+      const wasUpvoted = savedA.userVoteStatus === "upvoted";
+      const wasDownvoted = savedA.userVoteStatus === "downvoted";
+      let nextUp = savedA.upvotes ?? 0;
+      let nextDown = savedA.downvotes ?? 0;
+      let nextStatus;
+      if (type === "upvote") {
+        if (wasUpvoted) {
+          nextUp -= 1;
+          nextStatus = "none";
+        } else {
+          nextUp += 1;
+          if (wasDownvoted) nextDown -= 1;
+          nextStatus = "upvoted";
+        }
+      } else {
+        if (wasDownvoted) {
+          nextDown -= 1;
+          nextStatus = "none";
+        } else {
+          nextDown += 1;
+          if (wasUpvoted) nextUp -= 1;
+          nextStatus = "downvoted";
+        }
+      }
+      setAnswers((arr) =>
+        arr.map((a) =>
+          a._id === targetId
+            ? {
+                ...a,
+                upvotes: nextUp,
+                downvotes: nextDown,
+                userVoteStatus: nextStatus,
+              }
+            : a,
+        ),
+      );
+      try {
+        const res = await fetch(
+          `http://localhost:5000/api/answers/${targetId}/${type}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Failed to vote");
+        setAnswers((arr) =>
+          arr.map((a) =>
+            a._id === targetId
+              ? {
+                  ...a,
+                  upvotes: data.data.likesCount,
+                  downvotes: data.data.dislikesCount,
+                  userVoteStatus: data.data.userVoteStatus,
+                }
+              : a,
+          ),
+        );
+      } catch {
+        setAnswers((arr) =>
+          arr.map((a) => (a._id === targetId ? { ...a, ...savedA } : a)),
+        );
+      }
     }
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
 
   const isQuestionOwner = question?.createdBy?._id === user?._id;
 
@@ -286,12 +377,12 @@ const QuestionDetail = () => {
           {error || "Question not found"}
         </p>
         <Button
-          onClick={() => navigate("/questions")}
+          onClick={() => navigate(-1) || navigate("/")}
           variant="outline"
           className="rounded-full mt-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Questions
+          Go Back
         </Button>
       </div>
     );
@@ -305,7 +396,13 @@ const QuestionDetail = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/questions")}
+            onClick={() => {
+              if (window.history.length > 1) {
+                navigate(-1);
+              } else {
+                navigate("/");
+              }
+            }}
             className="rounded-full"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -321,7 +418,9 @@ const QuestionDetail = () => {
 
       <div className="max-w-3xl mx-auto">
         {/* Question Card */}
-        <article className="border-b border-border px-4 py-4 bg-slate-50 dark:bg-slate-900/20">
+        <article className="border-b border-border px-4 py-4 bg-slate-50 dark:bg-slate-900/20 relative pt-12">
+          <PostTypeBadge type="question" className="absolute top-3 left-3" />
+
           {/* Author Info */}
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -339,10 +438,7 @@ const QuestionDetail = () => {
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="w-3 h-3" />
-                  <span>{formatDate(question.createdAt)}</span>
-                  <span>·</span>
-                  <Eye className="w-3 h-3" />
-                  <span>{question.views || 0} views</span>
+                  <span>{formatRelativeTime(question.createdAt)}</span>
                 </div>
               </div>
             </div>
@@ -395,39 +491,67 @@ const QuestionDetail = () => {
           <div className="flex items-center justify-between pt-3 border-t border-border">
             <div className="flex items-center gap-1">
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 onClick={() => handleVote("upvote", "question", question._id)}
-                className={`rounded-full hover:bg-primary/10 hover:text-primary ${
-                  question.userVote === "upvote"
-                    ? "text-primary"
-                    : "text-muted-foreground"
+                className={`rounded-full h-9 px-3 gap-2 ${
+                  question.userVoteStatus === "upvoted"
+                    ? "text-sky-700"
+                    : "text-muted-foreground hover:text-sky-700"
                 }`}
               >
-                <ThumbsUp className="w-4 h-4 mr-1" />
-                <span>{question.upvotes || 0}</span>
+                <span
+                  className={`inline-flex items-center justify-center rounded-full border p-1 ${
+                    question.userVoteStatus === "upvoted"
+                      ? "border-sky-300 bg-sky-100 text-sky-700"
+                      : "border-sky-200 bg-sky-50 text-sky-600"
+                  }`}
+                >
+                  <ThumbsUp className="w-4 h-4" />
+                </span>
+                <span>
+                  {question.likesCount ?? question.upvotes?.length ?? 0}
+                </span>
               </Button>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 onClick={() => handleVote("downvote", "question", question._id)}
-                className={`rounded-full hover:bg-destructive/10 hover:text-destructive ${
-                  question.userVote === "downvote"
-                    ? "text-destructive"
-                    : "text-muted-foreground"
+                className={`rounded-full h-9 px-3 gap-2 ${
+                  question.userVoteStatus === "downvoted"
+                    ? "text-red-700"
+                    : "text-muted-foreground hover:text-red-700"
                 }`}
               >
-                <ThumbsDown className="w-4 h-4 mr-1" />
-                <span>{question.downvotes || 0}</span>
+                <span
+                  className={`inline-flex items-center justify-center rounded-full border p-1 ${
+                    question.userVoteStatus === "downvoted"
+                      ? "border-red-300 bg-red-100 text-red-700"
+                      : "border-red-200 bg-red-50 text-red-500"
+                  }`}
+                >
+                  <ThumbsDown className="w-4 h-4" />
+                </span>
+                <span>
+                  {question.dislikesCount ?? question.downvotes?.length ?? 0}
+                </span>
               </Button>
             </div>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10"
+                onClick={handleSave}
+                className={`rounded-full transition-all duration-300 ${
+                  question.isSaved 
+                    ? "text-primary bg-primary/10 hover:bg-primary/20" 
+                    : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+                }`}
+                aria-label={question.isSaved ? "Remove from saved" : "Save for later"}
               >
-                <Bookmark className="w-4 h-4" />
+                <Bookmark className={`w-4 h-4 ${question.isSaved ? "fill-current" : ""}`} />
               </Button>
               <Button
                 variant="ghost"
@@ -517,7 +641,7 @@ const QuestionDetail = () => {
                         </Badge>
                       )}
                       <span className="text-muted-foreground text-sm">
-                        • {formatDate(answer.createdAt)}
+                        • {formatRelativeTime(answer.createdAt)}
                       </span>
                     </div>
                   </div>
@@ -533,35 +657,53 @@ const QuestionDetail = () => {
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                       <Button
+                        type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() =>
                           handleVote("upvote", "answer", answer._id)
                         }
-                        className={`h-8 px-3 rounded-full ${
-                          answer.userVote === "upvote"
-                            ? "text-primary bg-primary/10"
-                            : "text-muted-foreground"
+                        className={`h-8 px-3 rounded-full gap-2 ${
+                          answer.userVoteStatus === "upvoted"
+                            ? "text-sky-700"
+                            : "text-muted-foreground hover:text-sky-700"
                         }`}
                       >
-                        <ThumbsUp className="w-4 h-4 mr-1" />
+                        <span
+                          className={`inline-flex items-center justify-center rounded-full border p-1 ${
+                            answer.userVoteStatus === "upvoted"
+                              ? "border-sky-300 bg-sky-100 text-sky-700"
+                              : "border-sky-200 bg-sky-50 text-sky-600"
+                          }`}
+                        >
+                          <ThumbsUp className="w-4 h-4" />
+                        </span>
                         <span className="text-sm font-medium">
                           {answer.upvotes || 0}
                         </span>
                       </Button>
                       <Button
+                        type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() =>
                           handleVote("downvote", "answer", answer._id)
                         }
-                        className={`h-8 px-3 rounded-full ${
-                          answer.userVote === "downvote"
-                            ? "text-destructive bg-destructive/10"
-                            : "text-muted-foreground"
+                        className={`h-8 px-3 rounded-full gap-2 ${
+                          answer.userVoteStatus === "downvoted"
+                            ? "text-red-700"
+                            : "text-muted-foreground hover:text-red-700"
                         }`}
                       >
-                        <ThumbsDown className="w-4 h-4 mr-1" />
+                        <span
+                          className={`inline-flex items-center justify-center rounded-full border p-1 ${
+                            answer.userVoteStatus === "downvoted"
+                              ? "border-red-300 bg-red-100 text-red-700"
+                              : "border-red-200 bg-red-50 text-red-500"
+                          }`}
+                        >
+                          <ThumbsDown className="w-4 h-4" />
+                        </span>
                         <span className="text-sm font-medium">
                           {answer.downvotes || 0}
                         </span>
@@ -610,21 +752,39 @@ const QuestionDetail = () => {
                 />
               </div>
 
-              <div className="flex items-center space-x-2">
-                <input
-                  id="isAnonymousAnswer"
-                  type="checkbox"
-                  checked={isAnonymous}
-                  onChange={(e) => setIsAnonymous(e.target.checked)}
-                  className="h-4 w-4 rounded border-border bg-secondary"
-                  disabled={submittingAnswer}
-                />
-                <Label
-                  htmlFor="isAnonymousAnswer"
-                  className="font-normal text-muted-foreground"
-                >
-                  Post anonymously
-                </Label>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center space-x-2">
+                  <input
+                    id="isAnonymousAnswer"
+                    type="checkbox"
+                    checked={isAnonymous}
+                    onChange={(e) => setIsAnonymous(e.target.checked)}
+                    className="h-4 w-4 rounded border-border bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={submittingAnswer || !canPostAnonymously}
+                  />
+                  <Label
+                    htmlFor="isAnonymousAnswer"
+                    className={`font-normal ${
+                      canPostAnonymously
+                        ? "text-muted-foreground"
+                        : "text-muted-foreground opacity-50 cursor-not-allowed"
+                    }`}
+                  >
+                    Post anonymously
+                  </Label>
+                </div>
+                {!canPostAnonymously && (
+                  <p className="text-xs text-muted-foreground pl-6">
+                    Enable anonymous posting in{" "}
+                    <a
+                      href="/settings"
+                      className="underline hover:text-foreground transition-colors"
+                    >
+                      Privacy Settings
+                    </a>{" "}
+                    to use this option.
+                  </p>
+                )}
               </div>
 
               <Button

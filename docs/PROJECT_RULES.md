@@ -3,7 +3,7 @@ You are helping build a full-stack exam preparation platform.
 These rules are ABSOLUTE and must never be violated:
 
 1. Every user has exactly ONE primary exam at any time.
-2. All content (questions, answers, resources, stories, search results, chat) is strictly scoped to the user’s current exam.
+2. All content (questions, answers, resources, stories, search results, chat) is strictly scoped to the usurrent exam.
 3. No cross-exam feed, search, or visibility is allowed.
 4. Chat is NOT a generic DM system:
    - Chat can only start from a question where one user answered another.

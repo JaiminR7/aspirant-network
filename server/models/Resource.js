@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { getExamEnum } = require('../constants/exams');
+const { ALLOWED_COMMENT_TEXTS, toAllowedCommentText } = require('../constants/allowedComments');
 
 const resourceSchema = new mongoose.Schema({
   // Resource Title
@@ -56,7 +57,14 @@ const resourceSchema = new mongoose.Schema({
     trim: true
   },
 
-  // Created By (User reference)
+  // Owner (canonical key expected by API clients/scripts)
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'User is required']
+  },
+
+  // Created By (legacy/backward-compatibility reference)
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -78,15 +86,15 @@ const resourceSchema = new mongoose.Schema({
     // For PDFs and Images (Cloudinary)
     url: String,
     publicId: String,
-    
+
     // For external links (YouTube, Drive, Blogs)
     externalLink: String,
-    
+
     // File metadata
     fileName: String,
     fileSize: Number, // in bytes
     mimeType: String,
-    
+
     // Thumbnail (for PDFs/Videos)
     thumbnailUrl: String
   },
@@ -108,14 +116,14 @@ const resourceSchema = new mongoose.Schema({
       maxlength: [30, 'Tag cannot exceed 30 characters']
     }],
     validate: {
-      validator: function(tags) {
+      validator: function (tags) {
         return tags.length <= 3;
       },
       message: 'Cannot add more than 3 user tags'
     }
   },
 
-  // Rating System
+  // Aggregate Rating (denormalized from ResourceRating collection)
   rating: {
     average: {
       type: Number,
@@ -135,25 +143,6 @@ const resourceSchema = new mongoose.Schema({
     }
   },
 
-  // Individual Ratings (for tracking who rated)
-  ratings: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    rating: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 5
-    },
-    ratedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-
   // Saved By Users
   saveCount: {
     type: Number,
@@ -166,13 +155,18 @@ const resourceSchema = new mongoose.Schema({
     ref: 'User'
   }],
 
-  // Usage Statistics
-  viewCount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
+  // Voting System
+  upvotes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
 
+  downvotes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+
+  // Usage Statistics
   downloadCount: {
     type: Number,
     default: 0,
@@ -190,7 +184,11 @@ const resourceSchema = new mongoose.Schema({
       type: String,
       required: true,
       trim: true,
-      maxlength: [500, 'Comment cannot exceed 500 characters']
+      maxlength: [500, 'Comment cannot exceed 500 characters'],
+      enum: {
+        values: ALLOWED_COMMENT_TEXTS,
+        message: 'Comment text must be from the approved whitelist'
+      }
     },
     isAnonymous: {
       type: Boolean,
@@ -261,6 +259,7 @@ resourceSchema.index({ saveCount: -1 });
 resourceSchema.index({ downloadCount: -1 });
 
 // User queries
+resourceSchema.index({ user: 1, createdAt: -1 });
 resourceSchema.index({ createdBy: 1, createdAt: -1 });
 
 // Tag search
@@ -275,39 +274,50 @@ resourceSchema.index({ isHidden: 1 });
 // ==================== MIDDLEWARE ====================
 
 // CRITICAL: Validate that resource's exam matches subject and topic
-resourceSchema.pre('save', async function() {
+resourceSchema.pre('save', async function () {
+  // Keep ownership keys in sync and reject owner-less documents.
+  if (!this.user && this.createdBy) {
+    this.user = this.createdBy;
+  }
+  if (!this.createdBy && this.user) {
+    this.createdBy = this.user;
+  }
+  if (!this.user || !this.createdBy) {
+    throw new Error('Resource owner is required');
+  }
+
   if (this.isNew || this.isModified('exam') || this.isModified('subject') || this.isModified('topic')) {
     const Subject = mongoose.model('Subject');
     const Topic = mongoose.model('Topic');
-    
+
     const [subject, topic] = await Promise.all([
       Subject.findById(this.subject),
       Topic.findById(this.topic)
     ]);
-    
+
     if (!subject) {
       throw new Error('Subject not found');
     }
-    
+
     if (!topic) {
       throw new Error('Topic not found');
     }
-    
+
     // Validate exam matches subject
     if (subject.exam !== this.exam) {
       throw new Error(`Resource exam (${this.exam}) must match subject exam (${subject.exam})`);
     }
-    
+
     // Validate exam matches topic
     if (topic.exam !== this.exam) {
       throw new Error(`Resource exam (${this.exam}) must match topic exam (${topic.exam})`);
     }
-    
+
     // Validate topic belongs to subject
     if (topic.subject.toString() !== this.subject.toString()) {
       throw new Error('Topic does not belong to the selected subject');
     }
-    
+
     // Auto-populate denormalized fields
     this.subjectName = subject.name;
     this.topicName = topic.name;
@@ -315,7 +325,7 @@ resourceSchema.pre('save', async function() {
 });
 
 // Validate content based on type
-resourceSchema.pre('save', function() {
+resourceSchema.pre('save', function () {
   if (this.isModified('type') || this.isModified('content')) {
     if (this.type === 'Link' || this.type === 'Video') {
       if (!this.content.externalLink) {
@@ -331,54 +341,11 @@ resourceSchema.pre('save', function() {
 
 // ==================== INSTANCE METHODS ====================
 
-// Add rating
-resourceSchema.methods.addRating = function(userId, ratingValue) {
-  // Validate rating value
-  if (ratingValue < 1 || ratingValue > 5) {
-    throw new Error('Rating must be between 1 and 5');
-  }
-  
-  const userIdStr = userId.toString();
-  
-  // Check if user already rated
-  const existingRatingIndex = this.ratings.findIndex(
-    r => r.user.toString() === userIdStr
-  );
-  
-  if (existingRatingIndex > -1) {
-    // Update existing rating
-    const oldRating = this.ratings[existingRatingIndex].rating;
-    this.rating.total = this.rating.total - oldRating + ratingValue;
-    this.ratings[existingRatingIndex].rating = ratingValue;
-    this.ratings[existingRatingIndex].ratedAt = Date.now();
-  } else {
-    // Add new rating
-    this.rating.total += ratingValue;
-    this.rating.count += 1;
-    this.ratings.push({
-      user: userId,
-      rating: ratingValue
-    });
-  }
-  
-  // Calculate average
-  this.rating.average = this.rating.total / this.rating.count;
-  
-  return this.save();
-};
-
-// Get user's rating
-resourceSchema.methods.getUserRating = function(userId) {
-  const userIdStr = userId.toString();
-  const userRating = this.ratings.find(r => r.user.toString() === userIdStr);
-  return userRating ? userRating.rating : null;
-};
-
 // Toggle save
-resourceSchema.methods.toggleSave = function(userId) {
+resourceSchema.methods.toggleSave = function (userId) {
   const userIdStr = userId.toString();
   const index = this.savedBy.findIndex(id => id.toString() === userIdStr);
-  
+
   if (index > -1) {
     // Unsave
     this.savedBy.splice(index, 1);
@@ -388,33 +355,51 @@ resourceSchema.methods.toggleSave = function(userId) {
     this.savedBy.push(userId);
     this.saveCount += 1;
   }
-  
+
   return this.save();
 };
 
 // Check if user has saved
-resourceSchema.methods.isSavedByUser = function(userId) {
+resourceSchema.methods.isSavedByUser = function (userId) {
   const userIdStr = userId.toString();
   return this.savedBy.some(id => id.toString() === userIdStr);
 };
 
-// Increment view count
-resourceSchema.methods.incrementViews = function() {
-  this.viewCount += 1;
-  return this.save();
-};
-
 // Increment download count
-resourceSchema.methods.incrementDownloads = function() {
+resourceSchema.methods.incrementDownloads = function () {
   this.downloadCount += 1;
   return this.save();
 };
 
 // Add comment
-resourceSchema.methods.addComment = function(userId, content, isAnonymous = false) {
+resourceSchema.methods.addComment = function (userId, content, isAnonymous = false) {
+  const normalizedContent = String(content || '').trim().replace(/\s+/g, ' ');
+  const canonicalContent = toAllowedCommentText(normalizedContent);
+
+  if (!canonicalContent) {
+    throw new Error('Comment content is required');
+  }
+
+  if (this.comments.length >= 10) {
+    throw new Error('A resource can have at most 10 comments');
+  }
+
+  const userIdStr = userId.toString();
+  const hasUserComment = this.comments.some((comment) => comment.commentedBy.toString() === userIdStr);
+  if (hasUserComment) {
+    throw new Error('User has already commented on this resource');
+  }
+
+  const hasDuplicateText = this.comments.some(
+    (comment) => String(comment.content || '').trim() === canonicalContent
+  );
+  if (hasDuplicateText) {
+    throw new Error('Duplicate comment text is not allowed');
+  }
+
   this.comments.push({
     commentedBy: userId,
-    content,
+    content: canonicalContent,
     isAnonymous
   });
   this.commentCount += 1;
@@ -422,14 +407,14 @@ resourceSchema.methods.addComment = function(userId, content, isAnonymous = fals
 };
 
 // Remove comment
-resourceSchema.methods.removeComment = function(commentId) {
+resourceSchema.methods.removeComment = function (commentId) {
   this.comments = this.comments.filter(c => c._id.toString() !== commentId.toString());
   this.commentCount = Math.max(0, this.comments.length);
   return this.save();
 };
 
 // Verify resource (admin only)
-resourceSchema.methods.verify = function(adminId) {
+resourceSchema.methods.verify = function (adminId) {
   this.isVerified = true;
   this.verifiedAt = Date.now();
   this.verifiedBy = adminId;
@@ -439,22 +424,22 @@ resourceSchema.methods.verify = function(adminId) {
 // ==================== STATIC METHODS ====================
 
 // Get resources by exam (CRITICAL: Main query method)
-resourceSchema.statics.getByExam = function(exam, options = {}) {
-  const { 
-    subject, 
-    topic, 
+resourceSchema.statics.getByExam = function (exam, options = {}) {
+  const {
+    subject,
+    topic,
     type,
-    sortBy = '-createdAt', 
-    limit = 20, 
-    skip = 0 
+    sortBy = '-createdAt',
+    limit = 20,
+    skip = 0
   } = options;
-  
+
   const query = { exam, isHidden: false };
-  
+
   if (subject) query.subject = subject;
   if (topic) query.topic = topic;
   if (type) query.type = type;
-  
+
   return this.find(query)
     .populate('createdBy', 'username name profilePicture level credibilityScore')
     .populate('subject', 'name slug')
@@ -465,12 +450,12 @@ resourceSchema.statics.getByExam = function(exam, options = {}) {
 };
 
 // Get user's resources
-resourceSchema.statics.getByUser = function(userId, options = {}) {
+resourceSchema.statics.getByUser = function (userId, options = {}) {
   const { exam, limit = 20, skip = 0 } = options;
   const query = { createdBy: userId };
-  
+
   if (exam) query.exam = exam;
-  
+
   return this.find(query)
     .populate('subject', 'name slug')
     .populate('topic', 'name slug')
@@ -480,9 +465,9 @@ resourceSchema.statics.getByUser = function(userId, options = {}) {
 };
 
 // Search resources by exam (CRITICAL: Exam-scoped search)
-resourceSchema.statics.searchByExam = function(exam, searchTerm, options = {}) {
+resourceSchema.statics.searchByExam = function (exam, searchTerm, options = {}) {
   const { subject, topic, type, limit = 20, skip = 0 } = options;
-  
+
   const query = {
     exam,
     isHidden: false,
@@ -492,11 +477,11 @@ resourceSchema.statics.searchByExam = function(exam, searchTerm, options = {}) {
       { userTags: { $regex: searchTerm, $options: 'i' } }
     ]
   };
-  
+
   if (subject) query.subject = subject;
   if (topic) query.topic = topic;
   if (type) query.type = type;
-  
+
   return this.find(query)
     .populate('createdBy', 'username name profilePicture level')
     .populate('subject', 'name slug')
@@ -507,9 +492,9 @@ resourceSchema.statics.searchByExam = function(exam, searchTerm, options = {}) {
 };
 
 // Get top-rated resources
-resourceSchema.statics.getTopRated = function(exam, limit = 10) {
-  return this.find({ 
-    exam, 
+resourceSchema.statics.getTopRated = function (exam, limit = 10) {
+  return this.find({
+    exam,
     isHidden: false,
     'rating.count': { $gte: 3 } // Minimum 3 ratings
   })
@@ -521,7 +506,7 @@ resourceSchema.statics.getTopRated = function(exam, limit = 10) {
 };
 
 // Get most saved resources
-resourceSchema.statics.getMostSaved = function(exam, limit = 10) {
+resourceSchema.statics.getMostSaved = function (exam, limit = 10) {
   return this.find({ exam, isHidden: false })
     .populate('createdBy', 'username name profilePicture level')
     .populate('subject', 'name slug')
@@ -531,13 +516,13 @@ resourceSchema.statics.getMostSaved = function(exam, limit = 10) {
 };
 
 // Get verified resources
-resourceSchema.statics.getVerified = function(exam, options = {}) {
+resourceSchema.statics.getVerified = function (exam, options = {}) {
   const { subject, topic, limit = 20, skip = 0 } = options;
   const query = { exam, isVerified: true, isHidden: false };
-  
+
   if (subject) query.subject = subject;
   if (topic) query.topic = topic;
-  
+
   return this.find(query)
     .populate('createdBy', 'username name profilePicture level')
     .populate('subject', 'name slug')
@@ -548,10 +533,10 @@ resourceSchema.statics.getVerified = function(exam, options = {}) {
 };
 
 // Get user's saved resources
-resourceSchema.statics.getSavedByUser = function(userId, exam) {
+resourceSchema.statics.getSavedByUser = function (userId, exam) {
   const query = { savedBy: userId };
   if (exam) query.exam = exam;
-  
+
   return this.find(query)
     .populate('createdBy', 'username name profilePicture level')
     .populate('subject', 'name slug')
@@ -562,17 +547,17 @@ resourceSchema.statics.getSavedByUser = function(userId, exam) {
 // ==================== VIRTUAL PROPERTIES ====================
 
 // Popularity score (for ranking)
-resourceSchema.virtual('popularityScore').get(function() {
+resourceSchema.virtual('popularityScore').get(function () {
   return (this.rating.average * 10) + (this.saveCount * 2) + (this.downloadCount * 0.5);
 });
 
 // URL path
-resourceSchema.virtual('path').get(function() {
+resourceSchema.virtual('path').get(function () {
   return `/resources/${this._id}`;
 });
 
 // File size in MB (for display)
-resourceSchema.virtual('fileSizeMB').get(function() {
+resourceSchema.virtual('fileSizeMB').get(function () {
   if (this.content.fileSize) {
     return (this.content.fileSize / (1024 * 1024)).toFixed(2);
   }
@@ -580,16 +565,15 @@ resourceSchema.virtual('fileSizeMB').get(function() {
 });
 
 // Ensure virtuals are included in JSON
-resourceSchema.set('toJSON', { 
+resourceSchema.set('toJSON', {
   virtuals: true,
-  transform: function(doc, ret) {
+  transform: function (doc, ret) {
     delete ret.__v;
     delete ret.savedBy; // Don't expose who saved it
-    delete ret.ratings; // Don't expose individual ratings
     return ret;
   }
 });
 
-  resourceSchema.set('toObject', { virtuals: true });
+resourceSchema.set('toObject', { virtuals: true });
 
-  module.exports = mongoose.model('Resource', resourceSchema);
+module.exports = mongoose.model('Resource', resourceSchema);

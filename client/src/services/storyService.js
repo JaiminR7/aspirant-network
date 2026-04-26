@@ -75,6 +75,26 @@ export const storyService = {
   },
 
   /**
+   * Upvote a story
+   * @param {string} id - Story ID
+   * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }
+   */
+  upvote: async (id) => {
+    const response = await api.post(`/stories/${id}/upvote`);
+    return response.data;
+  },
+
+  /**
+   * Downvote a story
+   * @param {string} id - Story ID
+   * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }
+   */
+  downvote: async (id) => {
+    const response = await api.post(`/stories/${id}/downvote`);
+    return response.data;
+  },
+
+  /**
    * Vote on a story (upvote/downvote)
    * @param {string} id - Story ID
    * @param {string} voteType - 'up' or 'down'

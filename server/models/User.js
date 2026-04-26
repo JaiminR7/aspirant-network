@@ -67,6 +67,15 @@ const userSchema = new mongoose.Schema({
     }
   },
 
+  // Personalized feed preference (defaults to primary exam)
+  examPreference: {
+    type: String,
+    enum: {
+      values: getExamEnum(),
+      message: '{VALUE} is not a valid exam preference'
+    }
+  },
+
   // Attempt Year
   attemptYear: {
     type: Number,
@@ -101,6 +110,13 @@ const userSchema = new mongoose.Schema({
       enum: ['Public', 'Connections', 'Private'],
       default: 'Public'
     }
+  },
+
+  // Profile Bio
+  bio: {
+    type: String,
+    trim: true,
+    maxlength: [300, 'Bio cannot exceed 300 characters']
   },
 
   // Profile Picture (Cloudinary)
@@ -188,6 +204,12 @@ const userSchema = new mongoose.Schema({
   }],
 
   // Account Status
+  role: {
+    type: String,
+    enum: ['user', 'system', 'admin'],
+    default: 'user'
+  },
+
   isActive: {
     type: Boolean,
     default: true
@@ -239,10 +261,15 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.index({ primaryExam: 1 });
+userSchema.index({ examPreference: 1 });
 userSchema.index({ credibilityScore: -1 });
 userSchema.index({ isActive: 1 });
 
 userSchema.pre('save', async function() {
+  if (!this.examPreference) {
+    this.examPreference = this.primaryExam;
+  }
+
   if (this.isModified('passwordHash')) {
     this.passwordHash = await bcrypt.hash(this.passwordHash, 10);
   }

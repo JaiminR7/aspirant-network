@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import api from "../services/api";
 import { subjectService } from "../services/subjectService";
+import { RESOURCE_TYPES, SYSTEM_TAGS } from "../constants/appConstants";
 import { Button } from "../components/ui/button";
 import {
   Card,
@@ -38,39 +40,15 @@ import {
   CheckCircle2,
   Lightbulb,
 } from "lucide-react";
+import { pushPendingFeedPost } from "../utils/feedOptimistic";
 
-const RESOURCE_TYPES = [
-  {
-    value: "PDF",
-    label: "PDF Document",
-    icon: FileText,
-    color: "from-red-500 to-rose-600",
-    bg: "bg-red-500/10",
-    iconColor: "text-red-400",
-  },
-  {
-    value: "Image",
-    label: "Image",
-    icon: FileImage,
-    color: "from-blue-500 to-cyan-600",
-    bg: "bg-blue-500/10",
-    iconColor: "text-blue-400",
-  },
-];
-
-// System tags options
-const SYSTEM_TAGS = [
-  "notes",
-  "practice-questions",
-  "mock-test",
-  "video-lecture",
-  "book",
-  "reference-material",
-  "previous-year-paper",
-  "formula-sheet",
-  "tips-tricks",
-  "cheat-sheet",
-];
+// Icon mapping for resource types
+const RESOURCE_ICONS = {
+  FileText,
+  FileImage,
+  Video,
+  LinkIcon,
+};
 
 const AddResource = () => {
   const navigate = useNavigate();
@@ -235,7 +213,6 @@ const AddResource = () => {
           ...prev,
           url: "",
           publicId: "",
-          externalLink: "",
         }));
       }
     }
@@ -323,14 +300,14 @@ const AddResource = () => {
     // Validate file type
     const allowedTypes = {
       PDF: ["application/pdf"],
-      Image: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+      Image: ["image/jpeg", "image/png"],
     };
 
     const currentType = formData.type;
     if (!allowedTypes[currentType]?.includes(file.type)) {
       setErrors((prev) => ({
         ...prev,
-        file: `Invalid file type. ${currentType === "PDF" ? "Only PDF files allowed." : "Only image files (JPEG, PNG, WebP, GIF) allowed."}`,
+        file: `Invalid file type. ${currentType === "PDF" ? "Only PDF files allowed." : "Only JPEG and PNG image files allowed."}`,
       }));
       return;
     }
@@ -371,25 +348,21 @@ const AddResource = () => {
       const formDataUpload = new FormData();
       formDataUpload.append("file", selectedFile);
 
-      const response = await fetch(
-        "http://localhost:5000/api/resources/upload",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formDataUpload,
+      // Use the centralized api service instead of raw fetch
+      const response = await api.post("/resources/upload", formDataUpload, {
+        headers: {
+          "Content-Type": "multipart/form-data",
         },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to upload file");
-      }
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total,
+          );
+          setUploadProgress(percentCompleted);
+        },
+      });
 
       setUploadProgress(100);
-      return data.data; // { url, publicId, fileName, fileSize, mimeType }
+      return response.data.data; // { url, publicId, fileName, fileSize, mimeType }
     } catch (error) {
       console.error("Upload error:", error);
       throw error;
@@ -418,7 +391,10 @@ const AddResource = () => {
     }
 
     // Description validation (optional)
-    if (formData.description.trim() && formData.description.trim().length > 1000) {
+    if (
+      formData.description.trim() &&
+      formData.description.trim().length > 1000
+    ) {
       newErrors.description = "Description cannot exceed 1000 characters";
     }
 
@@ -428,17 +404,7 @@ const AddResource = () => {
     }
 
     // URL/Link validation based on type
-    if (formData.type === "Link" || formData.type === "Video") {
-      if (!formData.externalLink.trim()) {
-        newErrors.externalLink = "URL is required for this resource type";
-      } else {
-        try {
-          new URL(formData.externalLink);
-        } catch {
-          newErrors.externalLink = "Invalid URL format";
-        }
-      }
-    } else if (formData.type === "PDF" || formData.type === "Image") {
+    if (formData.type === "PDF" || formData.type === "Image") {
       // Check if file is selected or already uploaded
       if (!selectedFile && !formData.url) {
         newErrors.file = "Please select a file to upload";
@@ -472,7 +438,6 @@ const AddResource = () => {
     try {
       let uploadedFileData = null;
 
-      // Upload file to Cloudinary if PDF or Image type
       if (
         (formData.type === "PDF" || formData.type === "Image") &&
         selectedFile
@@ -480,17 +445,17 @@ const AddResource = () => {
         try {
           uploadedFileData = await uploadFileToCloudinary();
         } catch (uploadError) {
-          setApiError("Failed to upload file. Please try again.");
+          setApiError(uploadError.response?.data?.message || "Failed to upload file. Please try again.");
           setLoading(false);
           return;
         }
       }
 
-      // Prepare request body based on resource type
       const requestBody = {
         title: formData.title.trim(),
         description: formData.description.trim(),
         type: formData.type,
+        isAnonymous: false,
         subject: formData.subject,
         subjectName: formData.subjectName,
         topic: formData.topic,
@@ -499,10 +464,7 @@ const AddResource = () => {
         userTags: formData.userTags,
       };
 
-      // Add appropriate URL field based on type
-      if (formData.type === "Link" || formData.type === "Video") {
-        requestBody.externalLink = formData.externalLink.trim();
-      } else if (formData.type === "PDF" || formData.type === "Image") {
+      if (formData.type === "PDF" || formData.type === "Image") {
         if (uploadedFileData) {
           requestBody.url = uploadedFileData.url;
           requestBody.publicId = uploadedFileData.publicId;
@@ -512,34 +474,42 @@ const AddResource = () => {
         }
       }
 
-      console.log("📤 Sending request body:", requestBody);
-      console.log(
-        "📋 systemTags type:",
-        typeof requestBody.systemTags,
-        "isArray:",
-        Array.isArray(requestBody.systemTags),
-      );
+      // Use api.post instead of fetch
+      const response = await api.post("/resources", requestBody);
+      const data = response.data;
 
-      const response = await fetch("http://localhost:5000/api/resources", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const optimisticPost =
+        data.feedPost || {
+          _id: data?.postId,
+          type: "resource",
+          exam: user?.examPreference || user?.primaryExam,
+          title: requestBody.title,
+          description: requestBody.description,
+          tags: [...(requestBody.systemTags || []), ...(requestBody.userTags || [])],
+          isAnonymous: false,
+          author: {
+            name: user?.name,
+            username: user?.username,
+            profilePicture: user?.profilePicture || null,
+          },
+          userId: {
+            name: user?.name,
+            username: user?.username,
+            profilePicture: user?.profilePicture || null,
+          },
+          likesCount: 0,
+          dislikesCount: 0,
+          commentsCount: 0,
+          userInteraction: "none",
+          userVoteStatus: "none",
+          createdAt: new Date().toISOString(),
+        };
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to add resource");
-      }
-
-      // Redirect to resources page
-      navigate("/resources");
+      pushPendingFeedPost(optimisticPost);
+      navigate("/");
     } catch (error) {
       console.error("Add resource error:", error);
-      setApiError(error.message || "Failed to add resource. Please try again.");
+      setApiError(error.response?.data?.message || error.message || "Failed to add resource. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -556,9 +526,7 @@ const AddResource = () => {
     const hasTopic = !!formData.topic;
 
     let hasValidContent = false;
-    if (formData.type === "Link" || formData.type === "Video") {
-      hasValidContent = !!formData.externalLink.trim();
-    } else if (formData.type === "PDF" || formData.type === "Image") {
+    if (formData.type === "PDF" || formData.type === "Image") {
       hasValidContent = !!selectedFile || !!formData.url;
     }
 
@@ -589,12 +557,6 @@ const AddResource = () => {
       return "Please select a topic";
     }
     if (
-      (formData.type === "Link" || formData.type === "Video") &&
-      !formData.externalLink.trim()
-    ) {
-      return "Please provide a resource URL";
-    }
-    if (
       (formData.type === "PDF" || formData.type === "Image") &&
       !selectedFile &&
       !formData.url
@@ -604,8 +566,6 @@ const AddResource = () => {
     return "";
   };
 
-  const needsExternalLink =
-    formData.type === "Link" || formData.type === "Video";
   const needsFileUpload = formData.type === "PDF" || formData.type === "Image";
 
   // Get selected resource type info
@@ -624,7 +584,6 @@ const AddResource = () => {
     if (formData.subject) completed++;
     if (formData.topic) completed++;
     if (
-      (needsExternalLink && formData.externalLink.trim()) ||
       (needsFileUpload && (selectedFile || formData.url))
     )
       completed++;
@@ -633,7 +592,7 @@ const AddResource = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
         <Card>
           <CardHeader>
@@ -704,8 +663,8 @@ const AddResource = () => {
               <div className="space-y-2">
                 <Label>Resource Type *</Label>
                 <div className="grid grid-cols-2 gap-3">
-                  {RESOURCE_TYPES.map((type) => {
-                    const Icon = type.icon;
+                   {RESOURCE_TYPES.map((type) => {
+                    const Icon = RESOURCE_ICONS[type.iconName] || FileText;
                     const isSelected = formData.type === type.value;
                     return (
                       <button
@@ -715,7 +674,7 @@ const AddResource = () => {
                         className={`p-4 rounded-lg border-2 transition-all text-left ${
                           isSelected
                             ? "border-primary bg-primary/5"
-                            : "border-gray-200 hover:border-gray-300"
+                            : "border-border bg-card hover:bg-muted/50"
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -731,31 +690,6 @@ const AddResource = () => {
                 )}
               </div>
 
-              {/* External Link (for Video/Link types) */}
-              {needsExternalLink && (
-                <div className="space-y-2">
-                  <Label htmlFor="externalLink">
-                    Resource URL *
-                    <span className="text-xs text-muted-foreground ml-2">
-                      (YouTube, Google Drive, etc.)
-                    </span>
-                  </Label>
-                  <Input
-                    id="externalLink"
-                    name="externalLink"
-                    type="url"
-                    value={formData.externalLink}
-                    onChange={handleChange}
-                    placeholder="https://example.com/resource"
-                    className={errors.externalLink ? "border-destructive" : ""}
-                  />
-                  {errors.externalLink && (
-                    <p className="text-sm text-destructive">
-                      {errors.externalLink}
-                    </p>
-                  )}
-                </div>
-              )}
 
               {/* File Upload (for PDF/Image types) */}
               {needsFileUpload && (
@@ -769,7 +703,7 @@ const AddResource = () => {
                   </Label>
 
                   {!selectedFile ? (
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
+                    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors bg-muted/20">
                       <input
                         type="file"
                         id="fileUpload"
@@ -777,7 +711,7 @@ const AddResource = () => {
                         accept={
                           formData.type === "PDF"
                             ? ".pdf"
-                            : "image/jpeg,image/png,image/webp,image/gif"
+                            : "image/jpeg,image/png"
                         }
                         onChange={handleFileSelect}
                       />
@@ -785,19 +719,19 @@ const AddResource = () => {
                         htmlFor="fileUpload"
                         className="cursor-pointer block"
                       >
-                        <Upload className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                        <Upload className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
                         <p className="text-base font-medium text-foreground mb-1">
                           Click to upload or drag and drop
                         </p>
                         <p className="text-sm text-muted-foreground">
                           {formData.type === "PDF"
                             ? "PDF files only (max 25MB)"
-                            : "JPEG, PNG, WebP, GIF (max 25MB)"}
+                            : "JPEG, PNG (max 25MB)"}
                         </p>
                       </label>
                     </div>
                   ) : (
-                    <div className="border rounded-lg p-4 bg-gray-50">
+                    <div className="border rounded-lg p-4 bg-secondary/30 border-border">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           {formData.type === "PDF" ? (
@@ -841,7 +775,7 @@ const AddResource = () => {
                               {uploadProgress}%
                             </span>
                           </div>
-                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full bg-primary rounded-full transition-all"
                               style={{ width: `${uploadProgress}%` }}
@@ -1019,9 +953,9 @@ const AddResource = () => {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => navigate("/resources")}
+                    onClick={() => navigate("/")}
                     disabled={loading}
-                    className="hover:bg-gray-100 active:bg-gray-100 focus:ring-0"
+                    className="focus:ring-0"
                   >
                     Cancel
                   </Button>

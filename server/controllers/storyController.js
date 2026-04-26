@@ -1,14 +1,78 @@
 const Story = require('../models/Story');
+const Post = require('../models/Post');
+const SavedItem = require('../models/SavedItem');
 
 const getAllStories = async (req, res) => {
   try {
-    const { type, sortBy = 'recent' } = req.query;
-    const query = { exam: req.examContext };
-    if (type && type !== 'all') query.type = type;
+    const { type, sortBy = '-createdAt', page = 1, limit = 12, author } = req.query;
+    // When filtering by author (profile page), skip exam context filter to avoid
+    // ObjectId vs string mismatch
+    const query = author ? {} : { exam: req.examContext };
+    if (type && type !== 'all') query.storyType = type;
+    if (author) query.author = author;
 
-    const sort = sortBy === 'popular' ? { upvotesCount: -1, views: -1 } : { createdAt: -1 };
-    const stories = await Story.find(query).populate('author').sort(sort);
-    res.json({ success: true, data: stories });
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const sort = sortBy === 'popular'
+      ? { likesCount: -1, createdAt: -1 }
+      : { createdAt: -1 };
+
+    const [total, stories] = await Promise.all([
+      Story.countDocuments(query),
+      Story.find(query).populate('author').sort(sort).skip(skip).limit(limitNum).lean()
+    ]);
+
+    // Check for saved status if user is logged in
+    let savedIds = new Set();
+    if (req.userId) {
+      const posts = await Post.find({ 
+        sourceId: { $in: stories.map(s => s._id) },
+        sourceModel: 'Story'
+      }).select('_id sourceId');
+      
+      const postIds = posts.map(p => p._id);
+      const savedItems = await SavedItem.find({
+        userId: req.userId,
+        postId: { $in: postIds }
+      }).select('postId');
+      
+      const postIdToSourceId = new Map(posts.map(p => [p._id.toString(), p.sourceId.toString()]));
+      savedItems.forEach(s => {
+        const sourceId = postIdToSourceId.get(s.postId.toString());
+        if (sourceId) savedIds.add(sourceId);
+      });
+    }
+
+    const cleanedStories = stories.map(s => {
+      const cleaned = {
+        ...s,
+        likesCount: s.upvotes?.length || 0,
+        dislikesCount: s.downvotes?.length || 0,
+        commentsCount: s.comments?.length || 0,
+        isSaved: savedIds.has(s._id.toString()),
+        upvotes: undefined,
+        downvotes: undefined
+      };
+
+      if (s.isAnonymous) {
+        cleaned.author = undefined;
+      }
+
+      return cleaned;
+    });
+
+    res.json({
+      success: true,
+      data: cleanedStories,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -16,26 +80,134 @@ const getAllStories = async (req, res) => {
 
 const getStoryById = async (req, res) => {
   try {
-    const story = await Story.findOneAndUpdate(
-      { _id: req.params.id, exam: req.examContext },
-      { $inc: { views: 1 } },
-      { new: true }
-    ).populate('author');
+    const story = await Story.findOne(
+      { _id: req.params.id, exam: req.examContext }
+    ).populate('author')
+     .populate({ path: 'comments.user', select: 'name username profilePicture' })
+     .lean();
+    
     if (!story) return res.status(404).json({ success: false, message: 'Story not found' });
-    res.json({ success: true, data: story });
+    
+    // Add counts and user vote status
+    const userId = req.userId?.toString();
+    const isOwnStory = story.author?._id?.toString() === userId;
+    // Check for saved status
+    let isSaved = false;
+    if (req.userId) {
+      const post = await Post.findOne({ sourceId: story._id, sourceModel: 'Story' }).select('_id');
+      if (post) {
+        const saved = await SavedItem.findOne({ userId: req.userId, postId: post._id }).select('_id');
+        isSaved = !!saved;
+      }
+    }
+
+    const cleanStory = {
+      ...story,
+      likesCount: story.upvotes?.length || 0,
+      dislikesCount: story.downvotes?.length || 0,
+      commentsCount: story.comments?.length || 0,
+      isOwnStory,
+      isSaved,
+      userVoteStatus: story.upvotes?.some(id => id.toString() === userId) 
+        ? 'upvoted'
+        : story.downvotes?.some(id => id.toString() === userId)
+        ? 'downvoted'
+        : 'none',
+      upvotes: undefined,
+      downvotes: undefined,
+      savedBy: undefined,
+    };
+
+    if (story.isAnonymous) {
+      cleanStory.author = undefined;
+    }
+    
+    res.json({ success: true, data: cleanStory });
   } catch (error) {
+    if (
+      error.message.includes('at most 10 comments') ||
+      error.message.includes('already commented') ||
+      error.message.includes('Duplicate comment text') ||
+      error.message.includes('content is required')
+    ) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
 const createStory = async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const {
+      title,
+      content,
+      storyType,
+      type,
+      excerpt,
+      tags,
+      isAnonymous,
+      result,
+    } = req.body;
     const story = await Story.create({
-      title, content, type, exam: req.examContext, author: req.userId
+      title,
+      content,
+      storyType: storyType || type,
+      excerpt,
+      tags,
+      isAnonymous: Boolean(isAnonymous),
+      result,
+      exam: req.examContext,
+      author: req.userId,
     });
+    const feedPost = await Post.create({
+      userId: req.userId,
+      exam: req.examContext,
+      type: 'story',
+      sourceModel: 'Story',
+      sourceId: story._id,
+      title: story.title,
+      description: story.excerpt || story.content || '',
+      tags: Array.isArray(story.tags) ? story.tags : [],
+      isAnonymous: Boolean(story.isAnonymous)
+    });
+
+    const populatedFeedPost = await Post.findById(feedPost._id)
+      .populate('userId', 'name username profilePicture examPreference primaryExam')
+      .lean();
+
     await story.populate('author');
-    res.status(201).json({ success: true, data: story });
+
+    const payload = story.toObject();
+    if (payload.isAnonymous) {
+      payload.author = undefined;
+    }
+
+    res.status(201).json({
+      success: true,
+      data: payload,
+      feedPost: {
+        ...populatedFeedPost,
+        author: populatedFeedPost?.isAnonymous
+          ? {
+              name: 'Anonymous',
+              username: 'anonymous',
+              profilePicture: null,
+              avatar: null
+            }
+          : populatedFeedPost?.userId,
+        userId: populatedFeedPost?.isAnonymous
+          ? {
+              name: 'Anonymous',
+              username: 'anonymous',
+              profilePicture: null,
+              avatar: null
+            }
+          : populatedFeedPost?.userId,
+        userInteraction: 'none',
+        userVoteStatus: 'none'
+      }
+    });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -43,14 +215,44 @@ const createStory = async (req, res) => {
 
 const updateStory = async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, storyType, type, excerpt, tags, isAnonymous, result } = req.body;
+
+    const updateData = {
+      title,
+      content,
+      storyType: storyType || type,
+      excerpt,
+      tags,
+      result,
+    };
+
+    if (typeof isAnonymous === 'boolean') {
+      updateData.isAnonymous = isAnonymous;
+    }
+
     const story = await Story.findOneAndUpdate(
       { _id: req.params.id, exam: req.examContext, author: req.userId },
-      { title, content, type },
+      updateData,
       { new: true, runValidators: true }
     ).populate('author');
     if (!story) return res.status(404).json({ success: false, message: 'Story not found or unauthorized' });
-    res.json({ success: true, data: story });
+
+    await Post.findOneAndUpdate(
+      { sourceModel: 'Story', sourceId: story._id },
+      {
+        title: story.title,
+        description: story.excerpt || story.content || '',
+        tags: Array.isArray(story.tags) ? story.tags : [],
+        isAnonymous: Boolean(story.isAnonymous)
+      }
+    );
+
+    const payload = story.toObject();
+    if (payload.isAnonymous) {
+      payload.author = undefined;
+    }
+
+    res.json({ success: true, data: payload });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -58,12 +260,193 @@ const updateStory = async (req, res) => {
 
 const deleteStory = async (req, res) => {
   try {
-    const story = await Story.findOneAndDelete({ _id: req.params.id, exam: req.examContext, author: req.userId });
+    // Only check ownership (author), not exam, to avoid ObjectId vs string mismatch
+    const story = await Story.findOneAndDelete({ _id: req.params.id, author: req.userId });
     if (!story) return res.status(404).json({ success: false, message: 'Story not found or unauthorized' });
+
+    await Post.deleteOne({ sourceModel: 'Story', sourceId: story._id });
+
     res.json({ success: true, message: 'Story deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-module.exports = { getAllStories, getStoryById, createStory, updateStory, deleteStory };
+const upvoteStory = async (req, res) => {
+  try {
+    const story = await Story.findOne({ _id: req.params.id, exam: req.examContext });
+    if (!story) return res.status(404).json({ success: false, message: 'Story not found' });
+
+    await story.upvote(req.userId);
+
+    const userIdStr = req.userId.toString();
+    const userVoteStatus = story.upvotes.some(id => id.toString() === userIdStr) 
+      ? 'upvoted' 
+      : story.downvotes.some(id => id.toString() === userIdStr) 
+        ? 'downvoted' 
+        : 'none';
+
+    res.json({ 
+      success: true, 
+      data: { 
+        likesCount: story.upvotes.length, 
+        dislikesCount: story.downvotes.length, 
+        userVoteStatus 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const downvoteStory = async (req, res) => {
+  try {
+    const story = await Story.findOne({ _id: req.params.id, exam: req.examContext });
+    if (!story) return res.status(404).json({ success: false, message: 'Story not found' });
+
+    await story.downvote(req.userId);
+
+    const userIdStr = req.userId.toString();
+    const userVoteStatus = story.upvotes.some(id => id.toString() === userIdStr) 
+      ? 'upvoted' 
+      : story.downvotes.some(id => id.toString() === userIdStr) 
+        ? 'downvoted' 
+        : 'none';
+
+    res.json({ 
+      success: true, 
+      data: { 
+        likesCount: story.upvotes.length, 
+        dislikesCount: story.downvotes.length, 
+        userVoteStatus 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getTrendingStories = async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    const stories = await Story.find({ exam: req.examContext, status: 'Published' })
+      .populate('author')
+      .lean();
+
+    const now = new Date();
+    const storiesWithScore = stories.map(s => {
+      const hoursSinceCreation = (now - new Date(s.createdAt)) / (1000 * 60 * 60);
+      const upvotesCount = s.upvotes?.length || 0;
+      const downvotesCount = s.downvotes?.length || 0;
+      const commentsCount = s.comments?.length || 0;
+      const score = (upvotesCount * 3) + (commentsCount * 4) - (downvotesCount * 2);
+      const trendingScore = score / Math.pow((hoursSinceCreation + 2), 1.5);
+      
+      const cleaned = {
+        ...s, 
+        trendingScore,
+        likesCount: upvotesCount,
+        dislikesCount: downvotesCount,
+        commentsCount,
+        upvotes: undefined,
+        downvotes: undefined
+      };
+
+      if (s.isAnonymous) {
+        cleaned.author = undefined;
+      }
+
+      return cleaned;
+    });
+
+    storiesWithScore.sort((a, b) => b.trendingScore - a.trendingScore);
+    const trending = storiesWithScore.slice(0, parseInt(limit));
+
+    res.json({ success: true, data: trending });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const saveStory = async (req, res) => {
+  try {
+    const story = await Story.findOne({ _id: req.params.id, exam: req.examContext });
+    if (!story) return res.status(404).json({ success: false, message: 'Story not found' });
+
+    await story.toggleSave(req.userId);
+
+    const isSaved = story.savedBy.some(id => id.toString() === req.userId.toString());
+    res.json({ success: true, data: { isSaved } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const addComment = async (req, res) => {
+  try {
+    const { content, isAnonymous = false } = req.body;
+    if (!content?.trim()) return res.status(400).json({ success: false, message: 'Comment content is required' });
+
+    const story = await Story.findOne({ _id: req.params.id, exam: req.examContext });
+    if (!story) return res.status(404).json({ success: false, message: 'Story not found' });
+
+    await story.addComment(req.userId, content.trim(), isAnonymous);
+
+    const updated = await Story.findById(req.params.id)
+      .populate({ path: 'comments.user', select: 'name username profilePicture' })
+      .lean();
+
+    res.json({ success: true, data: { comments: updated.comments } });
+  } catch (error) {
+    if (
+      error?.name === 'ValidationError' ||
+      /comment content is required|at most 10 comments|already commented|duplicate comment text|approved whitelist/i.test(
+        error?.message || ''
+      )
+    ) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteComment = async (req, res) => {
+  try {
+    const story = await Story.findOne({ _id: req.params.id, exam: req.examContext });
+    if (!story) return res.status(404).json({ success: false, message: 'Story not found' });
+
+    const comment = story.comments.id(req.params.commentId);
+    if (!comment) return res.status(404).json({ success: false, message: 'Comment not found' });
+
+    const isAuthor = story.author.toString() === req.userId.toString();
+    const isCommenter = comment.user.toString() === req.userId.toString();
+    if (!isAuthor && !isCommenter) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    comment.deleteOne();
+    await story.save();
+
+    const updated = await Story.findById(req.params.id)
+      .populate({ path: 'comments.user', select: 'name username profilePicture' })
+      .lean();
+
+    res.json({ success: true, data: { comments: updated.comments } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = { 
+  getAllStories, 
+  getStoryById, 
+  createStory, 
+  updateStory, 
+  deleteStory,
+  upvoteStory,
+  downvoteStory,
+  getTrendingStories,
+  saveStory,
+  addComment,
+  deleteComment
+};

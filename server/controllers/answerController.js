@@ -1,3 +1,4 @@
+const User = require('../models/User');
 const Answer = require('../models/Answer');
 const Question = require('../models/Question');
 const { createActivity } = require('./activityController');
@@ -14,10 +15,17 @@ const createAnswer = async (req, res) => {
     });
     await answer.populate('author question');
 
+    // Increment answer count atomically
+    const updatedQuestion = await Question.findByIdAndUpdate(
+      req.params.questionId,
+      { $inc: { answerCount: 1 } },
+      { new: true }
+    );
+
     // Create activity for question owner if not anonymous and not the owner answering their own question
-    if (!isAnonymous && question.author && question.author.toString() !== req.userId) {
+    if (!isAnonymous && question.createdBy && question.createdBy.toString() !== req.userId) {
       await createActivity({
-        user: question.author,
+        user: question.createdBy,
         type: 'answer',
         actor: req.userId,
         question: req.params.questionId,
@@ -26,7 +34,18 @@ const createAnswer = async (req, res) => {
       });
     }
 
-    res.status(201).json({ success: true, data: answer });
+    // Increment user's answer count
+    if (req.userId && !isAnonymous) {
+      await User.findByIdAndUpdate(req.userId, {
+        $inc: { 'stats.answersGiven': 1 }
+      });
+    }
+
+    res.status(201).json({ 
+      success: true, 
+      data: answer,
+      commentsCount: updatedQuestion.answerCount || 0
+    });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -48,14 +67,34 @@ const getAnswersByQuestion = async (req, res) => {
 
 const getAllAnswers = async (req, res) => {
   try {
-    const { author } = req.query;
-    const query = { exam: req.examContext };
-    if (author) query.author = author;
+    const { author, page = 1, limit = 10 } = req.query;
+    // When filtering by author (profile page), skip exam context filter to avoid
+    // ObjectId vs string mismatch
+    const query = author ? { author } : { exam: req.examContext };
 
-    const answers = await Answer.find(query)
-      .populate('author question')
-      .sort({ createdAt: -1 });
-    res.json({ success: true, data: answers });
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, answers] = await Promise.all([
+      Answer.countDocuments(query),
+      Answer.find(query)
+        .populate('author question')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+    ]);
+
+    res.json({
+      success: true,
+      data: answers,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -78,8 +117,17 @@ const updateAnswer = async (req, res) => {
 
 const deleteAnswer = async (req, res) => {
   try {
-    const answer = await Answer.findOneAndDelete({ _id: req.params.id, exam: req.examContext, author: req.userId });
+    // Only check ownership (author), not exam, to avoid ObjectId vs string mismatch
+    const answer = await Answer.findOneAndDelete({ _id: req.params.id, author: req.userId });
     if (!answer) return res.status(404).json({ success: false, message: 'Answer not found or unauthorized' });
+
+    // Decrement user's answer count
+    if (req.userId && !answer.isAnonymous) {
+      await User.findByIdAndUpdate(req.userId, {
+        $inc: { 'stats.answersGiven': -1 }
+      });
+    }
+
     res.json({ success: true, message: 'Answer deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -101,4 +149,104 @@ const markAccepted = async (req, res) => {
   }
 };
 
-module.exports = { createAnswer, getAnswersByQuestion, getAllAnswers, updateAnswer, deleteAnswer, markAccepted };
+const upvoteAnswer = async (req, res) => {
+  try {
+    // Support both direct (/api/answers/:id) and nested (/api/questions/:questionId/answers/:answerId) routes
+    const answerId = req.params.answerId || req.params.id;
+    
+    const answer = await Answer.findOne({ _id: answerId, exam: req.examContext });
+    if (!answer) return res.status(404).json({ success: false, message: 'Answer not found' });
+
+    const userId = req.userId;
+    const alreadyUpvoted = answer.upvotedBy.some(id => id.toString() === userId.toString());
+    const alreadyDownvoted = answer.downvotedBy.some(id => id.toString() === userId.toString());
+
+    // Atomic operations
+    if (alreadyUpvoted) {
+      // Remove upvote
+      await Answer.updateOne(
+        { _id: answerId },
+        { $pull: { upvotedBy: userId }, $inc: { upvotes: -1 } }
+      );
+    } else {
+      // Add upvote, remove downvote if exists
+      const update = { $addToSet: { upvotedBy: userId }, $inc: { upvotes: 1 } };
+      if (alreadyDownvoted) {
+        update.$pull = { downvotedBy: userId };
+        update.$inc.downvotes = -1;
+      }
+      await Answer.updateOne({ _id: answerId }, update);
+    }
+
+    // Get updated answer
+    const updatedAnswer = await Answer.findById(answerId);
+    const userVoteStatus = updatedAnswer.upvotedBy.some(id => id.toString() === userId.toString())
+      ? 'upvoted'
+      : updatedAnswer.downvotedBy.some(id => id.toString() === userId.toString())
+      ? 'downvoted'
+      : 'none';
+
+    res.json({
+      success: true,
+      data: {
+        likesCount: updatedAnswer.upvotes,
+        dislikesCount: updatedAnswer.downvotes,
+        userVoteStatus
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const downvoteAnswer = async (req, res) => {
+  try {
+    // Support both direct (/api/answers/:id) and nested (/api/questions/:questionId/answers/:answerId) routes
+    const answerId = req.params.answerId || req.params.id;
+    
+    const answer = await Answer.findOne({ _id: answerId, exam: req.examContext });
+    if (!answer) return res.status(404).json({ success: false, message: 'Answer not found' });
+
+    const userId = req.userId;
+    const alreadyUpvoted = answer.upvotedBy.some(id => id.toString() === userId.toString());
+    const alreadyDownvoted = answer.downvotedBy.some(id => id.toString() === userId.toString());
+
+    // Atomic operations
+    if (alreadyDownvoted) {
+      // Remove downvote
+      await Answer.updateOne(
+        { _id: answerId },
+        { $pull: { downvotedBy: userId }, $inc: { downvotes: -1 } }
+      );
+    } else {
+      // Add downvote, remove upvote if exists
+      const update = { $addToSet: { downvotedBy: userId }, $inc: { downvotes: 1 } };
+      if (alreadyUpvoted) {
+        update.$pull = { upvotedBy: userId };
+        update.$inc.upvotes = -1;
+      }
+      await Answer.updateOne({ _id: answerId }, update);
+    }
+
+    // Get updated answer
+    const updatedAnswer = await Answer.findById(answerId);
+    const userVoteStatus = updatedAnswer.upvotedBy.some(id => id.toString() === userId.toString())
+      ? 'upvoted'
+      : updatedAnswer.downvotedBy.some(id => id.toString() === userId.toString())
+      ? 'downvoted'
+      : 'none';
+
+    res.json({
+      success: true,
+      data: {
+        likesCount: updatedAnswer.upvotes,
+        dislikesCount: updatedAnswer.downvotes,
+        userVoteStatus
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = { createAnswer, getAnswersByQuestion, getAllAnswers, updateAnswer, deleteAnswer, markAccepted, upvoteAnswer, downvoteAnswer };

@@ -44,6 +44,16 @@ export const searchService = {
   },
 
   /**
+   * Search stories only
+   * @param {Object} params - { q, page, limit, type }
+   * @returns {Promise} - { stories, pagination }
+   */
+  searchStories: async (params) => {
+    const response = await api.get('/search/stories', { params });
+    return response.data;
+  },
+
+  /**
    * Get search suggestions (autocomplete)
    * @param {string} query - Search query
    * @returns {Promise} - { suggestions }

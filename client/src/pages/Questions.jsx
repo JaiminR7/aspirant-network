@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { subjectService } from "../services/subjectService";
+import { questionService } from "../services/questionService";
+import PostActions from "../components/post/PostActions";
 import {
   Select,
   SelectContent,
@@ -12,9 +15,6 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import {
-  MessageSquare,
-  ThumbsUp,
-  Eye,
   CheckCircle2,
   AlertCircle,
   Plus,
@@ -87,14 +87,12 @@ const Questions = () => {
 
   const fetchSubjects = async () => {
     try {
-      const mockSubjects = [
-        { _id: "1", name: "Mathematics" },
-        { _id: "2", name: "Physics" },
-        { _id: "3", name: "Chemistry" },
-        { _id: "4", name: "Biology" },
-        { _id: "5", name: "English" },
-      ];
-      setSubjects(mockSubjects);
+      const response = await subjectService.getSubjects();
+      if (response.success && Array.isArray(response.data)) {
+        setSubjects(response.data);
+      } else {
+        console.error("Invalid response format:", response);
+      }
     } catch (err) {
       console.error("Error fetching subjects:", err);
     }
@@ -103,14 +101,16 @@ const Questions = () => {
   const fetchTopics = async (subjectId) => {
     setLoadingTopics(true);
     try {
-      const mockTopics = [
-        { _id: "t1", name: "Algebra", subjectId },
-        { _id: "t2", name: "Calculus", subjectId },
-        { _id: "t3", name: "Geometry", subjectId },
-      ];
-      setTopics(mockTopics);
+      const response = await subjectService.getTopicsBySubject(subjectId);
+      if (response.success && Array.isArray(response.data)) {
+        setTopics(response.data);
+      } else {
+        console.error("Invalid response format:", response);
+        setTopics([]);
+      }
     } catch (err) {
       console.error("Error fetching topics:", err);
+      setTopics([]);
     } finally {
       setLoadingTopics(false);
     }
@@ -121,34 +121,24 @@ const Questions = () => {
       setLoading(true);
       setError(null);
 
-      const params = new URLSearchParams({
+      const params = {
         page: page.toString(),
         limit: "10",
         sortBy: "-createdAt",
-      });
+      };
 
-      if (filters.subject !== "all") params.append("subject", filters.subject);
-      if (filters.topic !== "all") params.append("topic", filters.topic);
-      if (filters.search) params.append("search", filters.search);
+      if (filters.subject !== "all") params.subject = filters.subject;
+      if (filters.topic !== "all") params.topic = filters.topic;
+      if (filters.search) params.search = filters.search;
       if (filters.solved !== "all") {
-        params.append("solved", filters.solved === "solved" ? "true" : "false");
+        params.solved = filters.solved === "solved" ? "true" : "false";
       }
 
-      const response = await fetch(
-        `http://localhost:5000/api/questions?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch questions");
-      }
-
-      const data = await response.json();
-      setQuestions(data.data || []);
-      setTotalPages(data.pagination?.totalPages || 1);
-      setTotalQuestions(data.pagination?.total || 0);
+      const response = await questionService.getQuestions(params);
+      
+      setQuestions(response.data || []);
+      setTotalPages(response.pagination?.totalPages || 1);
+      setTotalQuestions(response.pagination?.total || 0);
     } catch (err) {
       console.error("Error fetching questions:", err);
       setError("Failed to load questions. Please try again.");
@@ -398,7 +388,7 @@ const Questions = () => {
                   </div>
 
                   {/* Question Content */}
-                  <Link to={`/questions/${question._id}`}>
+                  <Link to={`/question/${question._id}`}>
                     <h3 className="font-semibold text-foreground text-base mb-2 hover:text-primary transition-colors">
                       {question.title}
                     </h3>
@@ -429,21 +419,17 @@ const Questions = () => {
                     )}
                   </div>
 
-                  {/* Metrics */}
-                  <div className="flex items-center gap-6 text-sm">
-                    <button className="metric-item group">
-                      <ThumbsUp className="h-4 w-4 group-hover:fill-current group-hover:text-primary transition-all" />
-                      <span>{question.upvotes?.length || 0}</span>
-                    </button>
-                    <button className="metric-item group">
-                      <MessageSquare className="h-4 w-4 group-hover:fill-current group-hover:text-primary transition-all" />
-                      <span>{question.answerCount || 0}</span>
-                    </button>
-                    <div className="metric-item">
-                      <Eye className="h-4 w-4" />
-                      <span>{question.views || 0}</span>
-                    </div>
-                  </div>
+                  {/* Interaction Bar */}
+                  <PostActions
+                    postId={question._id}
+                    initialLikes={question.upvotes?.length || 0}
+                    initialDislikes={question.downvotes?.length || 0}
+                    initialComments={question.answerCount || 0}
+                    initialInteraction={question.userVoteStatus === "upvoted" ? "like" : question.userVoteStatus === "downvoted" ? "dislike" : "none"}
+                    initialIsSaved={question.isSaved}
+                    size="md"
+                    showBorder={false}
+                  />
                 </div>
               </div>
             </article>

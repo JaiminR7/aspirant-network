@@ -1,5 +1,6 @@
 const Subject = require('../models/Subject');
 const Topic = require('../models/Topic');
+const { getExamEnum } = require('../constants/exams');
 
 // Generate slug from name
 const generateSlug = (name) => {
@@ -249,6 +250,40 @@ const examData = {
       }
     ]
   },
+  'HSC-12 boards': {
+    subjects: [
+      {
+        name: 'Physics',
+        slug: 'physics',
+        description: 'HSC Physics',
+        topics: [
+          { name: 'Mechanics', difficulty: 'Medium' },
+          { name: 'Electricity & Magnetism', difficulty: 'Medium' },
+          { name: 'Optics', difficulty: 'Medium' },
+        ]
+      },
+      {
+        name: 'Chemistry',
+        slug: 'chemistry',
+        description: 'HSC Chemistry',
+        topics: [
+          { name: 'Physical Chemistry', difficulty: 'Medium' },
+          { name: 'Organic Chemistry', difficulty: 'Medium' },
+          { name: 'Inorganic Chemistry', difficulty: 'Medium' },
+        ]
+      },
+      {
+        name: 'Mathematics',
+        slug: 'mathematics',
+        description: 'HSC Mathematics',
+        topics: [
+          { name: 'Algebra', difficulty: 'Medium' },
+          { name: 'Calculus', difficulty: 'Hard' },
+          { name: 'Probability', difficulty: 'Medium' },
+        ]
+      }
+    ]
+  },
   'IBPS': {
     subjects: [
       {
@@ -412,15 +447,22 @@ const initializeDatabase = async () => {
     let createdSubjects = 0;
     let createdTopics = 0;
 
+    const allowedExams = new Set(getExamEnum());
+
     // Iterate through each exam
     for (const [examName, data] of Object.entries(examData)) {
+      const normalizedExamName = examName === 'SSC' ? 'SSC-10 boards' : examName;
+      if (!allowedExams.has(normalizedExamName)) {
+        continue;
+      }
+
       for (const subjectData of data.subjects) {
         // Create subject
         const subject = new Subject({
           name: subjectData.name,
           slug: subjectData.slug,
           description: subjectData.description,
-          exam: examName,
+          exam: normalizedExamName,
           isActive: true
         });
         
@@ -432,7 +474,7 @@ const initializeDatabase = async () => {
           const topic = new Topic({
             name: topicData.name,
             slug: generateSlug(topicData.name),
-            exam: examName,
+            exam: normalizedExamName,
             subject: subject._id,
             subjectName: subject.name,
             difficulty: topicData.difficulty || 'Medium',

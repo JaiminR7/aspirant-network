@@ -12,12 +12,6 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Label } from "../components/ui/label";
 import {
-  FileText,
-  ThumbsUp,
-  Eye,
-  MessageSquare,
-  TrendingUp,
-  Clock,
   User,
   Plus,
   AlertCircle,
@@ -28,20 +22,25 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Bookmark,
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+  TrendingUp,
+  Clock,
+  FileText,
 } from "lucide-react";
+import { storyService } from "../services/storyService";
+import { postsService } from "../services/postsService";
+import { useToast } from "../components/ui/toast";
+import { formatRelativeTime } from "../utils/dateUtils";
+import { STORY_TYPES } from "../constants/appConstants";
 
-const STORY_TYPES = [
-  { value: "all", label: "All Stories" },
-  { value: "Success", label: "Success Stories" },
-  { value: "Journey", label: "Journey Stories" },
-  { value: "Tips", label: "Tips & Advice" },
-  { value: "Experience", label: "Experiences" },
-  { value: "Motivation", label: "Motivation" },
-];
 
 const Stories = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { addToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [stories, setStories] = useState([]);
@@ -78,31 +77,19 @@ const Stories = () => {
       setError(null);
 
       // Build query parameters
-      const params = new URLSearchParams({
+      const params = {
         page: page.toString(),
         limit: "12",
         sortBy: sortBy,
-      });
+      };
 
       if (storyType !== "all") {
-        params.append("type", storyType);
+        params.type = storyType;
       }
 
-      const response = await fetch(
-        `http://localhost:5000/api/stories?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch stories");
-      }
-
-      const data = await response.json();
-      setStories(data.stories || []);
+      const data = await storyService.getStories(params);
+      
+      setStories(data.data || []);
       setTotalPages(data.pagination?.totalPages || 1);
       setTotalStories(data.pagination?.total || 0);
     } catch (error) {
@@ -117,20 +104,6 @@ const Stories = () => {
     navigate(`/stories/${storyId}`);
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
 
   const getStoryTypeColor = (type) => {
     const colors = {
@@ -141,6 +114,63 @@ const Stories = () => {
       Motivation: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
     };
     return colors[type] || "bg-muted text-muted-foreground border-border";
+  };
+
+  const handleVote = async (storyId, voteType) => {
+    try {
+      const data = await (voteType === "upvote" 
+        ? storyService.upvote(storyId) 
+        : storyService.downvote(storyId));
+
+      setStories((prevStories) =>
+        prevStories.map((s) =>
+          s._id === storyId
+            ? {
+                ...s,
+                likesCount: data.data.likesCount,
+                dislikesCount: data.data.dislikesCount,
+                userVoteStatus: data.data.userVoteStatus,
+              }
+            : s,
+        ),
+      );
+    } catch (error) {
+      console.error(`Error ${voteType}:`, error);
+    }
+  };
+
+  const handleSaveStory = async (e, storyId) => {
+    e.stopPropagation();
+    if (!token) {
+      addToast({ title: "Login required", description: "Please login to save stories.", variant: "error" });
+      return;
+    }
+
+    const story = stories.find(s => s._id === storyId);
+    if (!story) return;
+
+    const previousState = story.isSaved;
+    
+    // Optimistic update
+    setStories(prev => prev.map(s => 
+      s._id === storyId ? { ...s, isSaved: !previousState } : s
+    ));
+
+    try {
+      if (previousState) {
+        await postsService.unsavePost(storyId);
+        addToast({ title: "Removed", description: "Removed from your library.", variant: "default" });
+      } else {
+        await postsService.savePost(storyId);
+        addToast({ title: "Saved", description: "Saved to your library.", variant: "success" });
+      }
+    } catch (error) {
+      // Rollback
+      setStories(prev => prev.map(s => 
+        s._id === storyId ? { ...s, isSaved: previousState } : s
+      ));
+      addToast({ title: "Error", description: "Failed to update library.", variant: "error" });
+    }
   };
 
   const [showFilters, setShowFilters] = useState(false);
@@ -178,7 +208,7 @@ const Stories = () => {
               )}
             </Button>
             <Button
-              onClick={() => navigate("/share-story")}
+              onClick={() => navigate("/stories/add")}
               className="rounded-full"
               size="sm"
             >
@@ -214,7 +244,6 @@ const Stories = () => {
                 <SelectItem value="-createdAt">Most Recent</SelectItem>
                 <SelectItem value="createdAt">Oldest First</SelectItem>
                 <SelectItem value="-upvotes">Most Liked</SelectItem>
-                <SelectItem value="-views">Most Viewed</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -258,7 +287,7 @@ const Stories = () => {
             </p>
             {storyType === "all" && (
               <Button
-                onClick={() => navigate("/share-story")}
+                onClick={() => navigate("/stories/add")}
                 className="rounded-full"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -280,9 +309,9 @@ const Stories = () => {
                   <div className="flex items-start justify-between mb-3">
                     <Badge
                       variant="outline"
-                      className={`${getStoryTypeColor(story.type)} border`}
+                      className={`${getStoryTypeColor(story.storyType)} border`}
                     >
-                      {story.type}
+                      {story.storyType}
                     </Badge>
                     {story.isFeatured && (
                       <Badge className="bg-primary/20 text-primary border-0">
@@ -307,26 +336,72 @@ const Stories = () => {
                     <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
                       <User className="w-3 h-3 text-primary-foreground" />
                     </div>
-                    <span>{story.author?.username || "Unknown"}</span>
+                    <span>
+                      {story.isAnonymous
+                        ? "Anonymous"
+                        : story.author?.username || "Unknown"}
+                    </span>
                     <span className="text-border">•</span>
                     <Clock className="w-4 h-4" />
-                    <span>{formatDate(story.createdAt)}</span>
+                    <span>{formatRelativeTime(story.createdAt)}</span>
                   </div>
 
                   {/* Stats */}
                   <div className="flex items-center gap-4 text-sm text-muted-foreground pt-3 border-t border-border">
-                    <div className="flex items-center gap-1 hover:text-primary transition-colors">
-                      <ThumbsUp className="w-4 h-4" />
-                      <span>{story.upvotes || 0}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Eye className="w-4 h-4" />
-                      <span>{story.views || 0}</span>
-                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleVote(story._id, "upvote");
+                      }}
+                      className={`flex items-center gap-1 hover:text-primary transition-colors ${
+                        story.userVoteStatus === "upvoted" ? "text-primary" : ""
+                      }`}
+                    >
+                      <ThumbsUp
+                        className={`w-4 h-4 ${
+                          story.userVoteStatus === "upvoted"
+                            ? "fill-current"
+                            : ""
+                        }`}
+                      />
+                      <span>{story.likesCount || 0}</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleVote(story._id, "downvote");
+                      }}
+                      className={`flex items-center gap-1 hover:text-destructive transition-colors ${
+                        story.userVoteStatus === "downvoted"
+                          ? "text-destructive"
+                          : ""
+                      }`}
+                    >
+                      <ThumbsDown
+                        className={`w-4 h-4 ${
+                          story.userVoteStatus === "downvoted"
+                            ? "fill-current"
+                            : ""
+                        }`}
+                      />
+                      <span>{story.dislikesCount || 0}</span>
+                    </button>
                     <div className="flex items-center gap-1">
                       <MessageSquare className="w-4 h-4" />
                       <span>{story.commentCount || 0}</span>
                     </div>
+                    <div className="flex-1" />
+                    <button
+                      onClick={(e) => handleSaveStory(e, story._id)}
+                      className={`p-1.5 rounded-full transition-all duration-300 ${
+                        story.isSaved 
+                          ? "text-primary bg-primary/10" 
+                          : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+                      }`}
+                      title={story.isSaved ? "Remove from saved" : "Save for later"}
+                    >
+                      <Bookmark className={`w-4 h-4 ${story.isSaved ? "fill-current" : ""}`} />
+                    </button>
                   </div>
                 </div>
               ))}

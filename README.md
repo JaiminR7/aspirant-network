@@ -2,6 +2,12 @@
 
 A comprehensive exam-focused social platform connecting aspirants preparing for competitive exams like CAT, UPSC, JEE, NEET, GATE, and more.
 
+## Full Project Documentation
+
+For a complete, code-aligned project inventory and architecture breakdown, see:
+
+- [PROJECT_FULL_DETAILS.md](PROJECT_FULL_DETAILS.md)
+
 ## Features
 
 ### Core Functionality
@@ -231,3 +237,234 @@ This project is licensed under the MIT License.
 ## Contact
 
 Project Link: [https://github.com/yourusername/aspirant-network](https://github.com/yourusername/aspirant-network)
+
+```
+aspirant-network
+├─ ARCHITECTURE.md
+├─ client
+│  ├─ components.json
+│  ├─ eslint.config.js
+│  ├─ index.html
+│  ├─ jsconfig.json
+│  ├─ package-lock.json
+│  ├─ package.json
+│  ├─ postcss.config.js
+│  ├─ PROJECT_RULES.md
+│  ├─ public
+│  │  ├─ vite.svg
+│  │  └─ _redirects
+│  ├─ README.md
+│  ├─ src
+│  │  ├─ assets
+│  │  ├─ components
+│  │  │  ├─ ActivityFeed.jsx
+│  │  │  ├─ CirclePostCard.jsx
+│  │  │  ├─ feed
+│  │  │  │  ├─ Feed.jsx
+│  │  │  │  ├─ FilterBar.jsx
+│  │  │  │  └─ PostCard.jsx
+│  │  │  ├─ FeedCardHeader.jsx
+│  │  │  ├─ InteractionBar.jsx
+│  │  │  ├─ landing
+│  │  │  │  ├─ Community.jsx
+│  │  │  │  ├─ CTASection.jsx
+│  │  │  │  ├─ Features.jsx
+│  │  │  │  ├─ Footer.jsx
+│  │  │  │  ├─ Hero.jsx
+│  │  │  │  ├─ Navbar.jsx
+│  │  │  │  ├─ PlatformPreview.jsx
+│  │  │  │  ├─ SocialProof.jsx
+│  │  │  │  └─ WhyAspirant.jsx
+│  │  │  ├─ post
+│  │  │  │  ├─ PostActions.jsx
+│  │  │  │  ├─ PostContent.jsx
+│  │  │  │  ├─ PostHeader.jsx
+│  │  │  │  ├─ PostTags.jsx
+│  │  │  │  ├─ PostTypeBadge.jsx
+│  │  │  │  └─ postTypeUtils.js
+│  │  │  ├─ ThemeToggle.jsx
+│  │  │  └─ ui
+│  │  │     ├─ badge.jsx
+│  │  │     ├─ button.jsx
+│  │  │     ├─ card.jsx
+│  │  │     ├─ dialog.jsx
+│  │  │     ├─ input.jsx
+│  │  │     ├─ label.jsx
+│  │  │     ├─ select.jsx
+│  │  │     ├─ Stepper.css
+│  │  │     ├─ Stepper.jsx
+│  │  │     ├─ textarea.jsx
+│  │  │     └─ toast.jsx
+│  │  ├─ constants
+│  │  │  └─ allowedComments.js
+│  │  ├─ context
+│  │  │  ├─ AuthContext.jsx
+│  │  │  ├─ ExamContext.jsx
+│  │  │  └─ ThemeContext.jsx
+│  │  ├─ index.css
+│  │  ├─ layouts
+│  │  │  ├─ AppLayout.jsx
+│  │  │  └─ AuthLayout.jsx
+│  │  ├─ lib
+│  │  │  └─ utils.js
+│  │  ├─ main.jsx
+│  │  ├─ pages
+│  │  │  ├─ Activity.jsx
+│  │  │  ├─ AddResource.jsx
+│  │  │  ├─ AddStory.jsx
+│  │  │  ├─ Admin.jsx
+│  │  │  ├─ AdminDashboard.jsx
+│  │  │  ├─ AdminLogin.jsx
+│  │  │  ├─ AskQuestion.jsx
+│  │  │  ├─ CircleDetail.jsx
+│  │  │  ├─ Circles.jsx
+│  │  │  ├─ CreateCircle.jsx
+│  │  │  ├─ CreateCirclePost.jsx
+│  │  │  ├─ ForgotPassword.jsx
+│  │  │  ├─ Home.jsx
+│  │  │  ├─ Landing.jsx
+│  │  │  ├─ Login.jsx
+│  │  │  ├─ Onboarding.jsx
+│  │  │  ├─ PostDetail.jsx
+│  │  │  ├─ Profile.jsx
+│  │  │  ├─ QuestionDetail.jsx
+│  │  │  ├─ Questions.jsx
+│  │  │  ├─ ResetPassword.jsx
+│  │  │  ├─ ResourceDetail.jsx
+│  │  │  ├─ resources
+│  │  │  │  └─ ResourceViewer.jsx
+│  │  │  ├─ Resources.jsx
+│  │  │  ├─ Search.jsx
+│  │  │  ├─ Settings.jsx
+│  │  │  ├─ Share.jsx
+│  │  │  ├─ Signup.jsx
+│  │  │  ├─ Stories.jsx
+│  │  │  └─ StoryDetail.jsx
+│  │  ├─ router
+│  │  │  └─ AppRouter.jsx
+│  │  ├─ services
+│  │  │  ├─ activityService.js
+│  │  │  ├─ adminService.js
+│  │  │  ├─ answerService.js
+│  │  │  ├─ api.js
+│  │  │  ├─ authService.js
+│  │  │  ├─ circleService.js
+│  │  │  ├─ index.js
+│  │  │  ├─ postsService.js
+│  │  │  ├─ questionService.js
+│  │  │  ├─ resourceService.js
+│  │  │  ├─ searchService.js
+│  │  │  ├─ storyService.js
+│  │  │  ├─ subjectService.js
+│  │  │  └─ userService.js
+│  │  └─ utils
+│  │     ├─ circleEvents.js
+│  │     └─ feedOptimistic.js
+│  ├─ tailwind.config.js
+│  └─ vite.config.js
+├─ package-lock.json
+├─ package.json
+├─ PROJECT_FULL_DETAILS.md
+├─ README.md
+├─ server
+│  ├─ API_QUICK_REFERENCE.md
+│  ├─ app.js
+│  ├─ config
+│  │  └─ database.js
+│  ├─ constants
+│  │  ├─ allowedComments.js
+│  │  ├─ exams.js
+│  │  └─ levels.js
+│  ├─ controllers
+│  │  ├─ activityController.js
+│  │  ├─ adminController.js
+│  │  ├─ answerController.js
+│  │  ├─ authController.js
+│  │  ├─ circleController.js
+│  │  ├─ circlePostController.js
+│  │  ├─ commentController.js
+│  │  ├─ interactionController.js
+│  │  ├─ postController.js
+│  │  ├─ questionController.js
+│  │  ├─ resourceController.js
+│  │  ├─ searchController.js
+│  │  ├─ storyController.js
+│  │  ├─ subjectController.js
+│  │  └─ userController.js
+│  ├─ index.js
+│  ├─ middleware
+│  │  ├─ admin.js
+│  │  ├─ adminAuth.js
+│  │  ├─ auth.js
+│  │  ├─ examContext.js
+│  │  └─ upload.js
+│  ├─ models
+│  │  ├─ Activity.js
+│  │  ├─ Answer.js
+│  │  ├─ Circle.js
+│  │  ├─ CirclePost.js
+│  │  ├─ Comment.js
+│  │  ├─ Exam.js
+│  │  ├─ Interaction.js
+│  │  ├─ Post.js
+│  │  ├─ Question.js
+│  │  ├─ Resource.js
+│  │  ├─ SavedItem.js
+│  │  ├─ Story.js
+│  │  ├─ Subject.js
+│  │  ├─ Topic.js
+│  │  └─ User.js
+│  ├─ OTP_IMPLEMENTATION_GUIDE.md
+│  ├─ package-lock.json
+│  ├─ package.json
+│  ├─ REFACTORING_SUMMARY.md
+│  ├─ REFACTOR_GUIDE.md
+│  ├─ routes
+│  │  ├─ activities.js
+│  │  ├─ admin.js
+│  │  ├─ answers.js
+│  │  ├─ auth.js
+│  │  ├─ circlePosts.js
+│  │  ├─ circles.js
+│  │  ├─ comments.js
+│  │  ├─ index.js
+│  │  ├─ interactions.js
+│  │  ├─ posts.js
+│  │  ├─ questions.js
+│  │  ├─ resources.js
+│  │  ├─ search.js
+│  │  ├─ stories.js
+│  │  ├─ subjects.js
+│  │  ├─ topics.js
+│  │  └─ users.js
+│  ├─ scripts
+│  │  ├─ checkSubjects.js
+│  │  ├─ cleanup
+│  │  │  ├─ cleanupInvalidResourceOwnership.js
+│  │  │  ├─ cleanupNonWhitelistComments.mjs
+│  │  │  └─ verifyWhitelistComments.mjs
+│  │  ├─ clearResources.js
+│  │  ├─ clearSubjects.js
+│  │  ├─ fixCircleTopics.js
+│  │  ├─ generateJwtSecret.js
+│  │  ├─ migrateActualCreator.js
+│  │  ├─ seed
+│  │  │  ├─ checkPostsDistribution.mjs
+│  │  │  ├─ checkSeededUserNames.mjs
+│  │  │  ├─ config.mjs
+│  │  │  ├─ runSeeder.mjs
+│  │  │  ├─ seedComments.mjs
+│  │  │  ├─ seedFeedContent.mjs
+│  │  │  ├─ seedInteractions.mjs
+│  │  │  ├─ seedPosts.mjs
+│  │  │  ├─ seedUsers.mjs
+│  │  │  └─ utils.mjs
+│  │  └─ seedSubjectsTopics.js
+│  └─ utils
+│     ├─ dbInitializer.js
+│     ├─ sendEmail.js
+│     ├─ tagUtils.js
+│     └─ validators.js
+└─ TESTING_ASK_QUESTION.md
+
+```

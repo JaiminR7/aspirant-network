@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Modern, Calm, Focused Theme */
+    /* Modern, Calm, Focused Theme - Light Mode */
     --background: 210 20% 98%;
     --foreground: 215 25% 20%;
     --card: 0 0% 100%;
@@ -12,12 +12,14 @@
     --popover: 0 0% 100%;
     --popover-foreground: 215 25% 20%;
     --primary: 220 90% 50%;
+    --primary-rgb: 13, 110, 253;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 12% 88%;
+    --secondary: 210 12% 94%;
     --secondary-foreground: 215 25% 20%;
     --muted: 210 15% 94%;
     --muted-foreground: 215 12% 50%;
     --accent: 270 60% 58%;
+    --accent-rgb: 147, 51, 234;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 70% 58%;
     --destructive-foreground: 0 0% 100%;
@@ -35,17 +37,51 @@
     --chart-4: 38 92% 50%;
     --chart-5: 0 70% 58%;
   }
+
+  .dark {
+    /* Premium Midnight Theme - Dark Mode */
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
+    --card: 224 71% 4%;
+    --card-foreground: 213 31% 91%;
+    --popover: 224 71% 4%;
+    --popover-foreground: 213 31% 91%;
+    --primary: 210 100% 50%;
+    --primary-rgb: 0, 122, 255;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 215 28% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 263 70% 50%;
+    --accent-rgb: 124, 58, 237;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 145 70% 30%;
+    --success-foreground: 210 40% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 210 40% 98%;
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
+    --ring: 216 100% 50%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
 }
 
 @layer base {
   * {
     @apply border-border;
   }
-  
+
   html {
     @apply scroll-smooth;
   }
-  
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
@@ -69,6 +105,7 @@
 }
 
 @layer components {
+
   /* Modern card with soft shadow */
   .modern-card {
     @apply bg-card border border-border rounded-xl shadow-sm;
@@ -89,11 +126,11 @@
   .action-btn {
     @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200;
   }
-  
+
   .action-btn-ghost {
     @apply action-btn text-muted-foreground hover:text-foreground hover:bg-muted/50;
   }
-  
+
   .action-btn-primary {
     @apply action-btn bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm hover:shadow;
   }
@@ -102,7 +139,7 @@
   .metric-item {
     @apply flex items-center gap-1.5 text-sm text-muted-foreground transition-colors;
   }
-  
+
   .metric-item:hover {
     @apply text-foreground;
   }
@@ -134,7 +171,7 @@
 
   /* Gradient background */
   .gradient-bg {
-    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(210 25% 97%) 100%);
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--secondary) / 0.5) 100%);
   }
 
   /* Focus ring */
@@ -163,6 +200,7 @@
 }
 
 @layer utilities {
+
   /* Text gradient */
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-accent to-secondary;
@@ -178,6 +216,7 @@
       opacity: 0;
       transform: translateY(8px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -188,7 +227,7 @@
   .hover-scale {
     @apply transition-transform duration-200;
   }
-  
+
   .hover-scale:hover {
     transform: scale(1.02);
   }
@@ -197,9 +236,33 @@
   .hover-lift {
     @apply transition-all duration-200;
   }
-  
-  /* Disable all hover effects globally */
-  * {
-    transition: none !important;
+
+  /* Shake animation for errors */
+  .animate-shake {
+    animation: shake 0.4s cubic-bezier(.36, .07, .19, .97) both;
+  }
+
+  @keyframes shake {
+
+    10%,
+    90% {
+      transform: translate3d(-1px, 0, 0);
+    }
+
+    20%,
+    80% {
+      transform: translate3d(2px, 0, 0);
+    }
+
+    30%,
+    50%,
+    70% {
+      transform: translate3d(-4px, 0, 0);
+    }
+
+    40%,
+    60% {
+      transform: translate3d(4px, 0, 0);
+    }
   }
 }

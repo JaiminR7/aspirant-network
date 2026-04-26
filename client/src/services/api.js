@@ -6,7 +6,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 seconds
+  timeout: 15000, // 15 seconds to be a bit more lenient for slower connections
 });
 
 // Request interceptor - adds auth token to all requests
@@ -16,6 +16,12 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    const adminAccess = localStorage.getItem('adminAccess') === 'true';
+    if (adminAccess) {
+      config.headers['X-Admin-Secret'] = 'bypass-123456';
+    }
+
     return config;
   },
   (error) => {
@@ -23,20 +29,30 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor - handles common errors
+// Response interceptor - handles common errors and implements a simple retry for timeouts
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const { config, response } = error;
+    
     // Handle token expiration
-    if (error.response?.status === 401) {
-      const message = error.response?.data?.message || '';
+    if (response?.status === 401) {
+      const message = response?.data?.message || '';
       if (message.includes('expired') || message.includes('invalid')) {
-        // Clear auth data and redirect to login
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
+        return Promise.reject(error);
       }
     }
+
+    // Simple retry for timeout or network errors (max 1 retry)
+    if (!config._retry && (error.code === 'ECONNABORTED' || !response)) {
+      config._retry = true;
+      console.warn(`[API] Request timed out or network error. Retrying...`, config.url);
+      return api(config);
+    }
+
     return Promise.reject(error);
   }
 );

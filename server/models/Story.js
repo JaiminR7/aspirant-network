@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { getExamEnum } = require('../constants/exams');
+const { ALLOWED_COMMENT_TEXTS, toAllowedCommentText } = require('../constants/allowedComments');
 
 const storySchema = new mongoose.Schema({
   // Story Title
@@ -16,7 +17,7 @@ const storySchema = new mongoose.Schema({
     type: String,
     required: [true, 'Story content is required'],
     trim: true,
-    minlength: [100, 'Content must be at least 100 characters'],
+    minlength: [30, 'Content must be at least 30 characters'],
     maxlength: [10000, 'Content cannot exceed 10000 characters']
   },
 
@@ -55,6 +56,12 @@ const storySchema = new mongoose.Schema({
     required: [true, 'Author is required']
   },
 
+  // Whether author identity should be hidden publicly
+  isAnonymous: {
+    type: Boolean,
+    default: false
+  },
+
   // Cover Image (optional, Cloudinary)
   coverImage: {
     url: String,
@@ -78,32 +85,12 @@ const storySchema = new mongoose.Schema({
   },
 
   // Engagement Metrics
-  views: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  upvotes: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  downvotes: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  // Users who upvoted
-  upvotedBy: [{
+  upvotes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
 
-  // Users who downvoted
-  downvotedBy: [{
+  downvotes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
@@ -125,7 +112,11 @@ const storySchema = new mongoose.Schema({
       type: String,
       required: true,
       trim: true,
-      maxlength: [1000, 'Comment cannot exceed 1000 characters']
+      maxlength: [1000, 'Comment cannot exceed 1000 characters'],
+      enum: {
+        values: ALLOWED_COMMENT_TEXTS,
+        message: 'Comment text must be from the approved whitelist'
+      }
     },
     isAnonymous: {
       type: Boolean,
@@ -183,22 +174,19 @@ storySchema.methods.upvote = async function(userId) {
   const userIdStr = userId.toString();
   
   // Check if already upvoted
-  const hasUpvoted = this.upvotedBy.some(id => id.toString() === userIdStr);
-  const hasDownvoted = this.downvotedBy.some(id => id.toString() === userIdStr);
+  const hasUpvoted = this.upvotes.some(id => id.toString() === userIdStr);
+  const hasDownvoted = this.downvotes.some(id => id.toString() === userIdStr);
   
   if (hasUpvoted) {
     // Remove upvote (toggle off)
-    this.upvotedBy = this.upvotedBy.filter(id => id.toString() !== userIdStr);
-    this.upvotes = Math.max(0, this.upvotes - 1);
+    this.upvotes = this.upvotes.filter(id => id.toString() !== userIdStr);
   } else {
     // Add upvote
-    this.upvotedBy.push(userId);
-    this.upvotes += 1;
+    this.upvotes.push(userId);
     
     // Remove downvote if exists
     if (hasDownvoted) {
-      this.downvotedBy = this.downvotedBy.filter(id => id.toString() !== userIdStr);
-      this.downvotes = Math.max(0, this.downvotes - 1);
+      this.downvotes = this.downvotes.filter(id => id.toString() !== userIdStr);
     }
   }
   
@@ -210,22 +198,19 @@ storySchema.methods.downvote = async function(userId) {
   const userIdStr = userId.toString();
   
   // Check if already downvoted
-  const hasDownvoted = this.downvotedBy.some(id => id.toString() === userIdStr);
-  const hasUpvoted = this.upvotedBy.some(id => id.toString() === userIdStr);
+  const hasDownvoted = this.downvotes.some(id => id.toString() === userIdStr);
+  const hasUpvoted = this.upvotes.some(id => id.toString() === userIdStr);
   
   if (hasDownvoted) {
     // Remove downvote (toggle off)
-    this.downvotedBy = this.downvotedBy.filter(id => id.toString() !== userIdStr);
-    this.downvotes = Math.max(0, this.downvotes - 1);
+    this.downvotes = this.downvotes.filter(id => id.toString() !== userIdStr);
   } else {
     // Add downvote
-    this.downvotedBy.push(userId);
-    this.downvotes += 1;
+    this.downvotes.push(userId);
     
     // Remove upvote if exists
     if (hasUpvoted) {
-      this.upvotedBy = this.upvotedBy.filter(id => id.toString() !== userIdStr);
-      this.upvotes = Math.max(0, this.upvotes - 1);
+      this.upvotes = this.upvotes.filter(id => id.toString() !== userIdStr);
     }
   }
   
@@ -248,9 +233,33 @@ storySchema.methods.toggleSave = async function(userId) {
 
 // Add comment
 storySchema.methods.addComment = async function(userId, content, isAnonymous = false) {
+  const normalizedContent = String(content || '').trim().replace(/\s+/g, ' ');
+  const canonicalContent = toAllowedCommentText(normalizedContent);
+
+  if (!canonicalContent) {
+    throw new Error('Comment content is required');
+  }
+
+  if (this.comments.length >= 10) {
+    throw new Error('A story can have at most 10 comments');
+  }
+
+  const userIdStr = userId.toString();
+  const hasUserComment = this.comments.some((comment) => comment.user.toString() === userIdStr);
+  if (hasUserComment) {
+    throw new Error('User has already commented on this story');
+  }
+
+  const hasDuplicateText = this.comments.some(
+    (comment) => String(comment.content || '').trim() === canonicalContent
+  );
+  if (hasDuplicateText) {
+    throw new Error('Duplicate comment text is not allowed');
+  }
+
   this.comments.push({
     user: userId,
-    content,
+    content: canonicalContent,
     isAnonymous,
     createdAt: new Date()
   });
@@ -319,7 +328,7 @@ storySchema.statics.getByExam = async function(exam, options = {}) {
 storySchema.statics.getTrending = async function(exam, limit = 10) {
   return this.find({ exam, status: 'Published' })
     .populate('author', 'name username profilePicture credibilityScore')
-    .sort({ upvotes: -1, views: -1, createdAt: -1 })
+    .sort({ createdAt: -1 })
     .limit(limit);
 };
 
@@ -327,7 +336,7 @@ storySchema.statics.getTrending = async function(exam, limit = 10) {
 
 // Net votes
 storySchema.virtual('netVotes').get(function() {
-  return this.upvotes - this.downvotes;
+  return this.upvotes.length - this.downvotes.length;
 });
 
 // Comment count

@@ -2,13 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { validateExamContext } = require('../middleware/examContext');
-const { createAnswer, getAnswersByQuestion, getAllAnswers, updateAnswer, deleteAnswer, markAccepted } = require('../controllers/answerController');
+const { getAllAnswers, updateAnswer, deleteAnswer, markAccepted, upvoteAnswer, downvoteAnswer } = require('../controllers/answerController');
 
+// Get all answers (for user profile, etc.)
 router.get('/', auth, validateExamContext, getAllAnswers);
-router.post('/questions/:questionId/answers', auth, validateExamContext, createAnswer);
-router.get('/questions/:questionId/answers', auth, validateExamContext, getAnswersByQuestion);
+
+// Individual answer operations (by answer ID)
 router.patch('/:id', auth, validateExamContext, updateAnswer);
 router.delete('/:id', auth, validateExamContext, deleteAnswer);
 router.patch('/:id/accept', auth, validateExamContext, markAccepted);
+router.post('/:id/upvote', auth, validateExamContext, upvoteAnswer);
+router.post('/:id/downvote', auth, validateExamContext, downvoteAnswer);
 
 module.exports = router;

@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ui/toast";
+import { userService } from "../services/userService";
+import { EXAMS, LEVELS } from "../constants/appConstants";
 import {
   Select,
   SelectContent,
@@ -32,54 +34,9 @@ import {
   Sparkles,
   ChevronRight,
   Trash2,
+  LogOut,
 } from "lucide-react";
 
-const LEVELS = [
-  {
-    value: "Beginner",
-    label: "Beginner",
-    description: "Just started preparation",
-  },
-  {
-    value: "Intermediate",
-    label: "Intermediate",
-    description: "Comfortable with basics",
-  },
-  { value: "Advanced", label: "Advanced", description: "Near exam-ready" },
-];
-
-const EXAMS = [
-  { value: "CAT", label: "CAT", fullName: "Common Admission Test" },
-  { value: "UPSC", label: "UPSC", fullName: "Union Public Service Commission" },
-  { value: "JEE", label: "JEE", fullName: "Joint Entrance Examination" },
-  {
-    value: "NEET",
-    label: "NEET",
-    fullName: "National Eligibility cum Entrance Test",
-  },
-  {
-    value: "GATE",
-    label: "GATE",
-    fullName: "Graduate Aptitude Test in Engineering",
-  },
-  { value: "SSC", label: "SSC", fullName: "Staff Selection Commission" },
-  {
-    value: "IBPS",
-    label: "IBPS",
-    fullName: "Institute of Banking Personnel Selection",
-  },
-  {
-    value: "GMAT",
-    label: "GMAT",
-    fullName: "Graduate Management Admission Test",
-  },
-  { value: "GRE", label: "GRE", fullName: "Graduate Record Examination" },
-  {
-    value: "IELTS",
-    label: "IELTS",
-    fullName: "International English Language Testing System",
-  },
-];
 
 const GOAL_VISIBILITY = [
   { value: "Public", label: "Public", description: "Visible to everyone" },
@@ -147,21 +104,7 @@ const Settings = () => {
         },
       };
 
-      const response = await fetch("http://localhost:5000/api/users/settings", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(updates),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to update settings");
-      }
-
-      const data = await response.json();
+      const data = await userService.updateProfile(updates);
 
       // Update user in context
       if (updateUser) {
@@ -188,24 +131,7 @@ const Settings = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        "http://localhost:5000/api/users/change-exam",
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ primaryExam: selectedExam }),
-        },
-      );
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to change exam");
-      }
-
-      const data = await response.json();
+      const data = await userService.changePrimaryExam(selectedExam);
 
       // Update user in context
       if (updateUser) {
@@ -238,20 +164,7 @@ const Settings = () => {
     setDeleteError("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/users/me", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ password: deletePassword }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to delete account");
-      }
+      await userService.deleteAccount(deletePassword);
 
       addToast({
         title: "Account deleted",
@@ -277,6 +190,12 @@ const Settings = () => {
     setShowExamModal(true);
     setExamConfirmation("");
     setError(null);
+  };
+
+  const handleLogoutNow = () => {
+    localStorage.removeItem("adminAccess");
+    logout();
+    navigate("/login");
   };
 
   if (!user) {
@@ -522,6 +441,26 @@ const Settings = () => {
             >
               Change Exam
               <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Account Actions */}
+        <div className="sidebar-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-foreground">Account Actions</h3>
+              <p className="text-sm text-muted-foreground">
+                Sign out from your current session
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handleLogoutNow}
+              className="rounded-full"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
             </Button>
           </div>
         </div>

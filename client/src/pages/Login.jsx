@@ -2,245 +2,189 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { Sparkles, Mail, Lock, AlertCircle, Eye, EyeOff } from "lucide-react";
+import Stepper, { Step } from "../components/ui/Stepper";
+import { 
+  Sparkles, Mail, Lock, AlertCircle, Eye, EyeOff, 
+  ShieldCheck
+} from "lucide-react";
+import { motion } from "framer-motion";
+import AuthLayout from "../layouts/AuthLayout";
+import { authService } from "../services/authService";
 
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  // State
+  const [activeStep, setActiveStep] = useState(1);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
-
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // Handle Input Changes
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    if (errors[name]) {
-      setErrors((prev) => ({
-        ...prev,
-        [name]: "",
-      }));
-    }
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: "" }));
   };
 
-  const validateForm = () => {
-    const newErrors = {};
 
-    if (!formData.email.trim()) {
-      newErrors.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Invalid email format";
-    }
-
+  const handleSubmitPassword = async () => {
     if (!formData.password) {
-      newErrors.password = "Password is required";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setApiError("");
-
-    if (!validateForm()) {
+      setErrors({ password: "Password is required" });
       return;
     }
-
     setLoading(true);
-
+    setApiError("");
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: formData.email.trim().toLowerCase(),
-          password: formData.password,
-        }),
+      const data = await authService.login({
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Login failed");
-      }
-
+      
       login(data.user, data.token);
-      navigate("/home");
+      setActiveStep(3);
+      setTimeout(() => {
+        navigate("/home");
+      }, 2000);
     } catch (error) {
-      console.error("Login error:", error);
-      setApiError(
-        error.message || "Failed to log in. Please check your credentials."
-      );
+      setApiError(error.message);
     } finally {
       setLoading(false);
     }
   };
 
+
+  const onNext = async () => {
+    if (activeStep === 1) {
+      if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        setErrors({ email: "Valid email is required" });
+        return;
+      }
+      setActiveStep(2);
+    } else if (activeStep === 2) {
+      await handleSubmitPassword();
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl"></div>
-      </div>
-
-      <div className="w-full max-w-md relative z-10">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary mb-4">
-            <Sparkles className="h-8 w-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold text-gradient">Aspirant Network</h1>
-          <p className="text-muted-foreground mt-2">Your exam preparation community</p>
-        </div>
-
-        {/* Login Card */}
-        <div className="sidebar-card">
-          <h2 className="text-2xl font-bold text-foreground text-center mb-2">
-            Welcome back
-          </h2>
-          <p className="text-muted-foreground text-center mb-6">
-            Sign in to continue your journey
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* API Error */}
-            {apiError && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                <span>{apiError}</span>
+    <AuthLayout
+      title={<>Welcome back to your <br /><span className="text-primary">learning journey.</span></>}
+      subtitle="Sign in to access your dashboard, connect with your circle, and continue growing with your community."
+      footer={
+        <p className="text-center text-muted-foreground text-xs font-medium">
+          New to Aspirant Network?{" "}
+          <Link to="/signup" className="text-primary font-bold hover:underline">
+            Create an account
+          </Link>
+        </p>
+      }
+    >
+      <Stepper
+        activeStep={activeStep}
+        onNext={onNext}
+        onBack={(step) => setActiveStep(step)}
+        backButtonText="Back"
+        nextButtonText="Continue"
+        disableStepIndicators={true}
+        className="auth-stepper"
+        nextButtonProps={{
+          style: { display: activeStep >= 3 ? 'none' : 'flex' },
+          disabled: loading
+        }}
+      >
+        {/* Step 1: Welcome & Email */}
+        <Step>
+          <div className="py-2">
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Welcome Back</h2>
+            <p className="text-muted-foreground text-sm mb-6">Enter your email to continue your journey.</p>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-1">Email Address</label>
+                <div className="relative group">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="name@example.com"
+                    className="w-full pl-12 pr-4 py-4 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
+                </div>
+                {errors.email && <p className="text-[10px] text-destructive font-bold flex items-center gap-1.5 ml-1"><AlertCircle className="w-3 h-3" /> {errors.email}</p>}
               </div>
-            )}
-
-            {/* Email */}
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-foreground">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className={`w-full pl-10 pr-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                    errors.email ? "border-destructive" : "border-transparent"
-                  } transition-all`}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                />
-              </div>
-              {errors.email && (
-                <p className="text-sm text-destructive flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {errors.email}
-                </p>
-              )}
             </div>
+          </div>
+        </Step>
 
-            {/* Password */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-medium text-foreground">
-                  Password
-                </label>
-                <Link
-                  to="/forgot-password"
-                  className="text-sm text-primary hover:underline"
-                >
-                  Forgot password?
+        {/* Step 2: Password */}
+        <Step>
+          <div className="py-2">
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Password</h2>
+            <p className="text-muted-foreground text-sm mb-6">Enter your account password.</p>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="relative group">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="••••••••"
+                    className="w-full pl-12 pr-12 py-4 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {errors.password && <p className="text-[10px] text-destructive font-bold ml-1">{errors.password}</p>}
+              </div>
+              
+              <div className="flex justify-end px-1">
+                <Link to="/forgot-password" size="sm" className="text-primary text-[10px] font-bold uppercase tracking-widest hover:underline">
+                  Forgot?
                 </Link>
               </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  value={formData.password}
-                  onChange={handleChange}
-                  className={`w-full pl-10 pr-12 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                    errors.password ? "border-destructive" : "border-transparent"
-                  } transition-all`}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="text-sm text-destructive flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {errors.password}
-                </p>
-              )}
             </div>
+            {apiError && <p className="text-[10px] text-destructive mt-4 font-bold flex items-center gap-2 justify-center uppercase tracking-wider"><AlertCircle className="w-3 h-3" /> {apiError}</p>}
+          </div>
+        </Step>
 
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              className="w-full py-6 rounded-xl text-base font-semibold bg-primary hover:bg-primary/90 shadow-lg shadow-primary/25"
-              disabled={loading}
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                  <span>Signing in...</span>
-                </div>
-              ) : (
-                "Sign In"
-              )}
-            </Button>
-
-            {/* Divider */}
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border"></div>
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or</span>
-              </div>
+        {/* Step 3: Success & Authenticating */}
+        <Step>
+          <div className="text-center py-8">
+            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              >
+                <ShieldCheck className="w-8 h-8 text-green-500" />
+              </motion.div>
             </div>
-
-            {/* Signup Link */}
-            <p className="text-center text-muted-foreground">
-              Don't have an account?{" "}
-              <Link to="/signup" className="text-primary font-semibold hover:underline">
-                Sign up
-              </Link>
-            </p>
-          </form>
-        </div>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground mt-8">
-          By signing in, you agree to our{" "}
-          <a href="#" className="text-primary hover:underline">Terms of Service</a>
-          {" "}and{" "}
-          <a href="#" className="text-primary hover:underline">Privacy Policy</a>
-        </p>
-      </div>
-    </div>
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Success!</h2>
+            <p className="text-muted-foreground text-sm">Authenticating your session... <br />Redirecting to dashboard.</p>
+            
+            <div className="mt-6 flex justify-center">
+              <div className="w-6 h-6 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+            </div>
+          </div>
+        </Step>
+      </Stepper>
+    </AuthLayout>
   );
 };
 

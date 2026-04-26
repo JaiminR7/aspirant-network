@@ -10,6 +10,7 @@ import { storyService } from './storyService';
 import { userService } from './userService';
 import { searchService } from './searchService';
 import { subjectService, topicService } from './subjectService';
+import { circleService, circlePostService } from './circleService';
 
 // Export all services
 export {
@@ -22,7 +23,9 @@ export {
   userService,
   searchService,
   subjectService,
-  topicService
+  topicService,
+  circleService,
+  circlePostService
 };
 
 // Default export with all services
@@ -36,5 +39,7 @@ export default {
   users: userService,
   search: searchService,
   subjects: subjectService,
-  topics: topicService
+  topics: topicService,
+  circles: circleService,
+  circlePosts: circlePostService
 };

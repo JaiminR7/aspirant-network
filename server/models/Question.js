@@ -65,6 +65,12 @@ const questionSchema = new mongoose.Schema({
     required: [true, 'Creator is required']
   },
 
+  // Whether question author identity should be hidden in public feed views
+  isAnonymous: {
+    type: Boolean,
+    default: false
+  },
+
   // Images/Attachments (Cloudinary)
   images: [{
     url: {
@@ -121,24 +127,12 @@ const questionSchema = new mongoose.Schema({
   },
 
   // Voting System
-  upvotes: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  upvotedBy: [{
+  upvotes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
 
-  downvotes: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  downvotedBy: [{
+  downvotes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
@@ -149,18 +143,6 @@ const questionSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-
-  // Views
-  viewCount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-
-  viewedBy: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
 
   // Moderation
   isReported: {
@@ -219,9 +201,6 @@ questionSchema.pre('save', async function() {
 questionSchema.set('toJSON', {
   transform: function(doc, ret) {
     delete ret.__v;
-    delete ret.viewedBy;
-    delete ret.upvotedBy;
-    delete ret.downvotedBy;
     return ret;
   }
 });

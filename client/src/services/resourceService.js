@@ -58,6 +58,16 @@ export const resourceService = {
   },
 
   /**
+   * Get download URL for a resource
+   * @param {string} id - Resource ID
+   * @returns {Promise} - { success, downloadUrl }
+   */
+  getDownloadUrl: async (id) => {
+    const response = await api.get(`/resources/${id}/download`);
+    return response.data;
+  },
+
+  /**
    * Update a resource
    * @param {string} id - Resource ID
    * @param {Object} updateData - Fields to update
@@ -86,6 +96,46 @@ export const resourceService = {
    */
   rate: async (id, rating) => {
     const response = await api.post(`/resources/${id}/rate`, { rating });
+    return response.data;
+  },
+ 
+  /**
+   * Get user's rating for a resource
+   * @param {string} id - Resource ID
+   * @returns {Promise} - { rating }
+   */
+  getUserRating: async (id) => {
+    const response = await api.get(`/resources/${id}/rating`);
+    return response.data;
+  },
+
+  /**
+   * Upvote a resource
+   * @param {string} id - Resource ID
+   * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }
+   */
+  upvote: async (id) => {
+    const response = await api.post(`/resources/${id}/upvote`);
+    return response.data;
+  },
+
+  /**
+   * Downvote a resource
+   * @param {string} id - Resource ID
+   * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }
+   */
+  downvote: async (id) => {
+    const response = await api.post(`/resources/${id}/downvote`);
+    return response.data;
+  },
+
+  /**
+   * Get trending resources
+   * @param {number} limit - Number of resources to fetch
+   * @returns {Promise} - { resources }
+   */
+  getTrending: async (limit = 10) => {
+    const response = await api.get('/resources/trending', { params: { limit } });
     return response.data;
   },
 

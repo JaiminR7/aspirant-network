@@ -67,6 +67,17 @@ export const answerService = {
   },
 
   /**
+   * Get answers by a specific user
+   * @param {string} userId - User ID
+   * @param {Object} params - { page, limit }
+   * @returns {Promise} - { answers, pagination }
+   */
+  getAnswersByUser: async (userId, params = {}) => {
+    const response = await api.get('/answers', { params: { ...params, author: userId } });
+    return response.data;
+  },
+
+  /**
    * Get my answers
    * @param {Object} params - { page, limit }
    * @returns {Promise} - { answers, pagination }

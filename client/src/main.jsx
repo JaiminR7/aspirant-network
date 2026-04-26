@@ -6,14 +6,18 @@ import { ExamProvider } from "./context/ExamContext";
 import { ToastProvider } from "./components/ui/toast";
 import AppRouter from "./router/AppRouter";
 
+import { ThemeProvider } from "./context/ThemeContext";
+
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <AuthProvider>
-      <ExamProvider>
-        <ToastProvider>
-          <AppRouter />
-        </ToastProvider>
-      </ExamProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ExamProvider>
+          <ToastProvider>
+            <AppRouter />
+          </ToastProvider>
+        </ExamProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

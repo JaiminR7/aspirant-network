@@ -10,6 +10,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const Subject = require('../models/Subject');
 const Topic = require('../models/Topic');
+const { getExamEnum } = require('../constants/exams');
 
 // Subjects and Topics for each exam
 const examData = {
@@ -251,6 +252,40 @@ const examData = {
       }
     ]
   },
+  'HSC-12 boards': {
+    subjects: [
+      {
+        name: 'Physics',
+        slug: 'physics',
+        description: 'HSC Physics',
+        topics: [
+          { name: 'Mechanics', difficulty: 'Medium' },
+          { name: 'Electricity & Magnetism', difficulty: 'Medium' },
+          { name: 'Optics', difficulty: 'Medium' },
+        ]
+      },
+      {
+        name: 'Chemistry',
+        slug: 'chemistry',
+        description: 'HSC Chemistry',
+        topics: [
+          { name: 'Physical Chemistry', difficulty: 'Medium' },
+          { name: 'Organic Chemistry', difficulty: 'Medium' },
+          { name: 'Inorganic Chemistry', difficulty: 'Medium' },
+        ]
+      },
+      {
+        name: 'Mathematics',
+        slug: 'mathematics',
+        description: 'HSC Mathematics',
+        topics: [
+          { name: 'Algebra', difficulty: 'Medium' },
+          { name: 'Calculus', difficulty: 'Hard' },
+          { name: 'Probability', difficulty: 'Medium' },
+        ]
+      }
+    ]
+  },
   'IBPS': {
     subjects: [
       {
@@ -414,9 +449,16 @@ async function seedDatabase() {
     let subjectCount = 0;
     let topicCount = 0;
 
+    const allowedExams = new Set(getExamEnum());
+
     // Iterate through each exam
     for (const [examName, data] of Object.entries(examData)) {
-      console.log(`\nSeeding ${examName}...`);
+      const normalizedExamName = examName === 'SSC' ? 'SSC-10 boards' : examName;
+      if (!allowedExams.has(normalizedExamName)) {
+        continue;
+      }
+
+      console.log(`\nSeeding ${normalizedExamName}...`);
 
       for (const subjectData of data.subjects) {
         // Create subject with slug already set
@@ -424,7 +466,7 @@ async function seedDatabase() {
           name: subjectData.name,
           slug: subjectData.slug,
           description: subjectData.description,
-          exam: examName,
+          exam: normalizedExamName,
           isActive: true
         });
         
@@ -437,7 +479,7 @@ async function seedDatabase() {
           const topic = new Topic({
             name: topicData.name,
             slug: generateSlug(topicData.name),
-            exam: examName,
+            exam: normalizedExamName,
             subject: subject._id,
             subjectName: subject.name,
             difficulty: topicData.difficulty || 'Medium',

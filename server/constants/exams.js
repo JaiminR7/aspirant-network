@@ -13,11 +13,8 @@ const EXAMS = {
   JEE: 'JEE',
   NEET: 'NEET',
   GATE: 'GATE',
-  SSC: 'SSC',
-  IBPS: 'IBPS',
-  GMAT: 'GMAT',
-  GRE: 'GRE',
-  IELTS: 'IELTS'
+  SSC: 'SSC-10 boards',
+  HSC: 'HSC-12 boards'
 };
 
 // Array of exam values for validation and iteration
@@ -56,34 +53,16 @@ const EXAM_METADATA = {
     category: 'Engineering'
   },
   [EXAMS.SSC]: {
-    name: 'SSC',
-    fullName: 'Staff Selection Commission',
-    description: 'Government job exam',
-    category: 'Government Services'
+    name: 'SSC-10 boards',
+    fullName: 'SSC - 10 Boards',
+    description: 'Class 10 board preparation',
+    category: 'School Boards'
   },
-  [EXAMS.IBPS]: {
-    name: 'IBPS',
-    fullName: 'Institute of Banking Personnel Selection',
-    description: 'Banking sector exam',
-    category: 'Banking'
-  },
-  [EXAMS.GMAT]: {
-    name: 'GMAT',
-    fullName: 'Graduate Management Admission Test',
-    description: 'MBA entrance exam (International)',
-    category: 'Management'
-  },
-  [EXAMS.GRE]: {
-    name: 'GRE',
-    fullName: 'Graduate Record Examination',
-    description: 'Graduate school entrance exam',
-    category: 'International'
-  },
-  [EXAMS.IELTS]: {
-    name: 'IELTS',
-    fullName: 'International English Language Testing System',
-    description: 'English proficiency test',
-    category: 'Language'
+  [EXAMS.HSC]: {
+    name: 'HSC-12 boards',
+    fullName: 'HSC - 12 Boards',
+    description: 'Class 12 board preparation',
+    category: 'School Boards'
   }
 };
 
@@ -124,34 +103,18 @@ const EXAM_SUBJECTS = {
     'Core Engineering'
   ],
   [EXAMS.SSC]: [
-    'General Intelligence',
-    'General Awareness',
-    'Quantitative Aptitude',
+    'Mathematics',
+    'Science',
+    'Social Science',
     'English'
   ],
-  [EXAMS.IBPS]: [
-    'Reasoning',
-    'Quantitative Aptitude',
+  [EXAMS.HSC]: [
+    'Physics',
+    'Chemistry',
+    'Mathematics',
+    'Biology',
     'English',
-    'General Awareness',
-    'Computer Knowledge'
-  ],
-  [EXAMS.GMAT]: [
-    'Quantitative',
-    'Verbal',
-    'Integrated Reasoning',
-    'Analytical Writing'
-  ],
-  [EXAMS.GRE]: [
-    'Verbal Reasoning',
-    'Quantitative Reasoning',
-    'Analytical Writing'
-  ],
-  [EXAMS.IELTS]: [
-    'Listening',
-    'Reading',
-    'Writing',
-    'Speaking'
+    'Computer Science'
   ]
 };
 

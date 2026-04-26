@@ -19,14 +19,29 @@ const resourceStorage = new CloudinaryStorage({
       resourceType = 'image';
     } else if (file.mimetype === 'application/pdf') {
       folder = 'aspirant-network/resources/pdfs';
+      // PDFs must use 'raw' resource type to avoid 401 on the image delivery pipeline
       resourceType = 'raw';
     }
+
+    const isPdf = file.mimetype === 'application/pdf';
+
+    const timestamp = Date.now();
+    // Correctly extract filename without extension (handles multiple dots like 'my.notes.pdf')
+    const nameWithoutExt = file.originalname.replace(/\.[^/.]+$/, "");
+    const extension = file.originalname.split('.').pop();
+    
+    // For Cloudinary 'raw' resource_type, the extension MUST be part of the public_id
+    // for it to appear in the final delivery URL.
+    const publicId = `${timestamp}-${nameWithoutExt}.${extension}`;
 
     return {
       folder,
       resource_type: resourceType,
-      allowed_formats: ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
-      public_id: `${Date.now()}-${file.originalname.split('.')[0]}`,
+      type: 'upload',
+      access_mode: 'public',
+      // allowed_formats is not supported for 'raw' resource_type
+      ...(resourceType !== 'raw' && { allowed_formats: ['jpg', 'jpeg', 'png'] }),
+      public_id: publicId,
     };
   },
 });
@@ -35,7 +50,7 @@ const profileStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'aspirant-network/profiles',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    allowed_formats: ['jpg', 'jpeg', 'png'],
     transformation: [{ width: 500, height: 500, crop: 'fill', gravity: 'face' }],
     public_id: (req, file) => `profile-${req.user._id}-${Date.now()}`,
   },
@@ -46,7 +61,6 @@ const resourceFileFilter = (req, file, cb) => {
   const allowedMimes = [
     'image/jpeg',
     'image/png',
-    'image/webp',
     'application/pdf',
     'application/vnd.ms-powerpoint',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -63,7 +77,7 @@ const resourceFileFilter = (req, file, cb) => {
 
 // File filter for images only
 const imageFileFilter = (req, file, cb) => {
-  const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  const allowedMimes = ['image/jpeg', 'image/png'];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
@@ -77,7 +91,7 @@ const attachmentStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'aspirant-network/attachments',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+    allowed_formats: ['jpg', 'jpeg', 'png'],
     public_id: (req, file) => `attachment-${Date.now()}-${file.originalname.split('.')[0]}`,
   },
 });

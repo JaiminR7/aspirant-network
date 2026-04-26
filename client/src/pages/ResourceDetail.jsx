@@ -3,35 +3,38 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
+import PostActions from "../components/post/PostActions";
+import PostTypeBadge from "../components/post/PostTypeBadge";
+import { resourceService } from "../services/resourceService";
+import { formatDate } from "../utils/dateUtils";
 import {
   ArrowLeft,
   BookOpen,
   Download,
   ExternalLink,
-  Star,
-  Eye,
-  Calendar,
-  User,
-  Tag,
+  Clock,
   Bookmark,
-  BookmarkCheck,
   Share2,
-  Flag,
   Loader2,
+  Star,
 } from "lucide-react";
+import { postsService } from "../services/postsService";
+import { useToast } from "../components/ui/toast";
 
 const ResourceDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { addToast } = useToast();
 
   const [resource, setResource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [userRating, setUserRating] = useState(0);
-  const [hoveredRating, setHoveredRating] = useState(0);
-  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [savePending, setSavePending] = useState(false);
+  const [userRating, setUserRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingLoading, setRatingLoading] = useState(false);
 
   useEffect(() => {
     fetchResource();
@@ -40,67 +43,25 @@ const ResourceDetail = () => {
   const fetchResource = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `http://localhost:5000/api/resources/${id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
+      const response = await resourceService.getById(id);
+      
+      setResource(response.data);
+      setIsSaved(response.data.isSaved);
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch resource");
+      // Fetch user's rating if logged in
+      if (token) {
+        try {
+          const ratingData = await resourceService.getUserRating(id);
+          setUserRating(ratingData.data.rating || 0);
+        } catch (err) {
+          console.warn("Failed to fetch user rating:", err);
+        }
       }
-
-      const data = await response.json();
-      setResource(data.data);
-
-      // Check if user has already rated
-      const userRatingObj = data.data.ratings?.find(
-        (r) => r.user === user?._id,
-      );
-      if (userRatingObj) {
-        setUserRating(userRatingObj.rating);
-      }
-
-      // Check if resource is saved
-      setIsSaved(data.data.savedBy?.includes(user?._id));
     } catch (error) {
       console.error("Error fetching resource:", error);
-      setError(error.message);
+      setError(error.message || "Failed to load resource details");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRating = async (rating) => {
-    if (!user || isSubmittingRating) return;
-
-    try {
-      setIsSubmittingRating(true);
-      const response = await fetch(
-        `http://localhost:5000/api/resources/${id}/rate`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ rating }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to rate resource");
-      }
-
-      setUserRating(rating);
-      fetchResource(); // Refresh to get updated rating
-    } catch (error) {
-      console.error("Error rating resource:", error);
-    } finally {
-      setIsSubmittingRating(false);
     }
   };
 
@@ -108,86 +69,106 @@ const ResourceDetail = () => {
     if (!resource?.content?.url && !resource?.content?.externalLink) return;
 
     try {
-      // Increment view/download count
-      await fetch(`http://localhost:5000/api/resources/${id}/download`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
       const url = resource.content.url || resource.content.externalLink;
-
-      // For PDFs, convert to preview URL that opens in browser
-      if (resource.type === "PDF" && url.includes("cloudinary.com")) {
-        // Convert raw upload to fl_attachment:false to view in browser
-        const viewUrl = url.replace(
-          "/raw/upload/",
-          "/raw/upload/fl_attachment:false/",
-        );
-        window.open(viewUrl, "_blank");
-      } else {
-        window.open(url, "_blank");
-      }
+      window.open(url, "_blank");
     } catch (error) {
       console.error("Error viewing resource:", error);
     }
   };
 
   const handleDownload = async () => {
-    if (!resource?.content?.url) return;
+    if (!resource) return;
+
+    if (resource.type === "Link" || resource.type === "Video") {
+      const externalUrl =
+        resource.content?.externalLink || resource.content?.url;
+      if (externalUrl) window.open(externalUrl, "_blank");
+      return;
+    }
 
     try {
-      // Increment download count
-      await fetch(`http://localhost:5000/api/resources/${id}/download`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      // Step 1: Get the Cloudinary URL from backend (also increments download count)
+      const data = await resourceService.getDownloadUrl(id);
+      console.log("[download] got URL:", data.downloadUrl);
 
-      const url = resource.content.url;
+      if (!data.success || !data.downloadUrl)
+        throw new Error("No download URL");
 
-      // For PDFs, ensure proper download with .pdf extension
-      if (resource.type === "PDF" && url.includes("cloudinary.com")) {
-        // Force download with proper filename
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${resource.title}.pdf`;
-        link.target = "_blank";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        window.open(url, "_blank");
-      }
+      // Step 2: Fetch the file directly from Cloudinary as a blob
+      // Cloudinary allows cross-origin fetch (permissive CORS headers)
+      const fileResponse = await fetch(data.downloadUrl);
+      if (!fileResponse.ok)
+        throw new Error("Failed to fetch file from Cloudinary");
+
+      const blob = await fileResponse.blob();
+
+      // Step 3: Trigger browser download with explicit .pdf filename
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "pdf.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+
+      setTimeout(() => fetchResource(), 500);
     } catch (error) {
-      console.error("Error downloading resource:", error);
+      console.error("[download] error:", error);
+      alert("Download failed. Please try again.");
+    }
+  };
+
+  const handleRate = async (rating) => {
+    if (!token) {
+      addToast({ title: "Login required", description: "Please login to rate resources.", variant: "error" });
+      return;
+    }
+    
+    setRatingLoading(true);
+    try {
+      const response = await resourceService.rate(id, rating);
+      setUserRating(rating);
+      setResource(prev => ({
+        ...prev,
+        rating: {
+          average: response.data.averageRating,
+          count: response.data.ratingCount
+        }
+      }));
+      addToast({ title: "Rating updated", description: `You rated this ${rating} stars.`, variant: "success" });
+    } catch (error) {
+      console.error("Error rating resource:", error);
+      addToast({ title: "Error", description: "Failed to submit rating.", variant: "error" });
+    } finally {
+      setRatingLoading(false);
     }
   };
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!token) {
+      addToast({ title: "Login required", description: "Please login to save resources.", variant: "error" });
+      return;
+    }
+    if (savePending) return;
+
+    const previousState = isSaved;
+    setIsSaved(!previousState);
+    setSavePending(true);
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/resources/${id}/save`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to save resource");
+      if (previousState) {
+        await postsService.unsavePost(id);
+        addToast({ title: "Removed", description: "Resource removed from your library.", variant: "default" });
+      } else {
+        await postsService.savePost(id);
+        addToast({ title: "Saved", description: "Added to your private study collection.", variant: "success" });
       }
-
-      setIsSaved(!isSaved);
-      fetchResource();
     } catch (error) {
-      console.error("Error saving resource:", error);
+      setIsSaved(previousState);
+      addToast({ title: "Error", description: "Failed to update library. Try again.", variant: "error" });
+    } finally {
+      setSavePending(false);
     }
   };
 
@@ -205,188 +186,193 @@ const ResourceDetail = () => {
         <div className="text-destructive mb-4">
           {error || "Resource not found"}
         </div>
-        <Button onClick={() => navigate("/resources")} variant="outline">
+        <Button
+          onClick={() =>
+            window.history.length > 1 ? navigate(-1) : navigate("/")
+          }
+          variant="outline"
+        >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Resources
+          Back
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-5xl mx-auto px-6 py-8">
       {/* Back Button */}
       <Button
         variant="ghost"
-        onClick={() => navigate("/resources")}
+        onClick={() =>
+          window.history.length > 1 ? navigate(-1) : navigate("/")
+        }
         className="mb-6"
       >
         <ArrowLeft className="h-4 w-4 mr-2" />
-        Back to Resources
+        Back
       </Button>
 
       {/* Resource Card */}
-      <div className="bg-card rounded-xl border shadow-sm p-8 mb-6">
-        {/* Header with thumbnail */}
-        <div className="flex items-start gap-6 mb-6">
-          {/* Thumbnail */}
-          {(resource.type === "PDF" || resource.type === "Image") &&
-            resource.content?.url && (
-              <div className="flex-shrink-0">
-                {resource.type === "PDF" ? (
-                  <div className="w-32 h-32 rounded-lg border bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
-                    <img
-                      src={resource.content.url
-                        .replace(
-                          "/raw/upload/",
-                          "/image/upload/pg_1,w_200,h_200,c_fill,f_jpg/",
-                        )
-                        .replace(".pdf", ".pdf.jpg")}
-                      alt={`${resource.title} preview`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.style.display = "none";
-                        e.target.parentElement.innerHTML = `
-                        <div class="w-full h-full flex flex-col items-center justify-center text-muted-foreground">
-                          <svg class="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                          </svg>
-                          <span class="text-xs font-medium mt-2">PDF</span>
-                        </div>
-                      `;
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="w-32 h-32 rounded-lg overflow-hidden border">
-                    <img
-                      src={resource.content.url}
-                      alt={resource.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+      <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6 relative pt-12">
+        <PostTypeBadge type="resource" className="absolute top-3 left-3" />
 
-          {/* Title and badges */}
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-3">
-              <Badge className="rounded-full">{resource.type}</Badge>
-              {resource.isVerified && (
-                <Badge className="rounded-full bg-green-500/10 text-green-600 border-0">
-                  Verified
-                </Badge>
-              )}
+        {/* 1️⃣ HEADER SECTION */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold flex-shrink-0">
+              {resource.createdBy?.name?.charAt(0).toUpperCase() || "?"}
             </div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              {resource.title}
-            </h1>
-            <p className="text-muted-foreground">{resource.description}</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground">
+                  {resource.createdBy?.name || "Anonymous"}
+                </span>
+                <span className="text-muted-foreground text-sm">
+                  @{resource.createdBy?.username || "anonymous"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                <Clock className="w-3 h-3" />
+                <span>{formatDate(resource.createdAt)}</span>
+                <span>·</span>
+                <Download className="w-3 h-3" />
+                <span>{resource.downloadCount || 0} downloads</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full text-sm font-medium">
+              <Star className="w-4 h-4 fill-current" />
+              <span>{resource.rating?.average?.toFixed(1) || "0.0"}</span>
+              <span className="text-xs opacity-70">({resource.rating?.count || 0} ratings)</span>
+            </div>
+            <Badge className="rounded-full px-3 py-1">{resource.type}</Badge>
+            {resource.isVerified && (
+              <Badge className="rounded-full px-3 py-1 bg-green-500/10 text-green-600 border-0">
+                Verified
+              </Badge>
+            )}
           </div>
         </div>
 
-        {/* Metadata */}
-        <div className="flex flex-wrap items-center gap-6 pb-6 border-b mb-6">
-          <div className="flex items-center gap-2 text-sm">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <span className="text-foreground">
-              {resource.createdBy?.name || "Anonymous"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">
-              {new Date(resource.createdAt).toLocaleDateString()}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Eye className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">
-              {resource.viewCount || 0} views
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Download className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">
-              {resource.downloadCount || 0} downloads
-            </span>
-          </div>
-        </div>
+        {/* 2️⃣ TITLE SECTION */}
+        <h1 className="text-2xl font-semibold text-foreground">
+          {resource.title}
+        </h1>
 
-        {/* Tags */}
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Tags</h3>
+        {/* 3️⃣ DESCRIPTION SECTION */}
+        {resource.description && (
+          <p className="text-muted-foreground leading-relaxed">
+            {resource.description}
+          </p>
+        )}
+
+        {/* 4️⃣ THUMBNAIL / PREVIEW SECTION */}
+        {resource.type === "Image" && resource.content?.url && (
+          <div className="flex justify-center">
+            <div className="w-96 max-w-md rounded-lg overflow-hidden border shadow-sm">
+              <img
+                src={resource.content.url}
+                alt={resource.title}
+                className="w-full h-auto object-cover"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 5️⃣ TAGS SECTION */}
+        {(resource.subjectName ||
+          resource.topicName ||
+          resource.systemTags?.length > 0 ||
+          resource.userTags?.length > 0) && (
           <div className="flex flex-wrap gap-2">
             {resource.subjectName && (
-              <Badge variant="outline" className="rounded-full">
-                <BookOpen className="h-3 w-3 mr-1" />
+              <Badge className="rounded-full px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-0 font-medium">
                 {resource.subjectName}
               </Badge>
             )}
             {resource.topicName && (
-              <Badge variant="outline" className="rounded-full">
-                <Tag className="h-3 w-3 mr-1" />
+              <Badge className="rounded-full px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-0 font-medium">
                 {resource.topicName}
               </Badge>
             )}
             {resource.systemTags?.map((tag, idx) => (
-              <Badge key={idx} variant="secondary" className="rounded-full">
+              <Badge
+                key={idx}
+                className="rounded-full px-3 py-1 bg-muted text-muted-foreground border-0 font-medium"
+              >
                 {tag}
               </Badge>
             ))}
             {resource.userTags?.map((tag, idx) => (
-              <Badge key={idx} variant="outline" className="rounded-full">
+              <Badge
+                key={idx}
+                variant="outline"
+                className="rounded-full px-3 py-1"
+              >
                 {tag}
               </Badge>
             ))}
           </div>
-        </div>
+        )}
 
-        {/* Rating */}
-        <div className="mb-6 pb-6 border-b">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Rating</h3>
-          <div className="flex items-center gap-4">
-            <div className="flex gap-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  onClick={() => handleRating(star)}
-                  onMouseEnter={() => setHoveredRating(star)}
-                  onMouseLeave={() => setHoveredRating(0)}
-                  disabled={isSubmittingRating}
-                  className="transition-transform hover:scale-110 disabled:opacity-50"
-                >
-                  <Star
-                    className={`h-6 w-6 ${
-                      star <= (hoveredRating || userRating)
-                        ? "fill-yellow-500 text-yellow-500"
-                        : "text-muted-foreground"
-                    }`}
-                  />
-                </button>
-              ))}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {resource.rating?.average?.toFixed(1) || "0.0"} average (
-              {resource.rating?.count || 0} ratings)
-            </div>
+        {/* Rating Interaction Section */}
+        <div className="bg-secondary/30 rounded-xl p-5 border border-border flex flex-col items-center gap-3">
+          <p className="text-sm font-medium text-foreground">
+            {userRating > 0 ? "Update your rating" : "Rate this resource"}
+          </p>
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onMouseEnter={() => setHoverRating(star)}
+                onMouseLeave={() => setHoverRating(0)}
+                onClick={() => handleRate(star)}
+                disabled={ratingLoading || !token}
+                className={`transition-all duration-200 transform active:scale-95 ${
+                  !token ? "cursor-default" : "hover:scale-110"
+                } ${ratingLoading ? "opacity-50" : "opacity-100"}`}
+                title={!token ? "Login to rate" : `Rate ${star} stars`}
+              >
+                <Star
+                  className={`w-8 h-8 transition-colors ${
+                    star <= (hoverRating || userRating)
+                      ? "fill-amber-400 text-amber-400"
+                      : "text-muted-foreground/30"
+                  }`}
+                />
+              </button>
+            ))}
           </div>
+          {userRating > 0 && (
+            <p className="text-xs text-muted-foreground">
+              You've rated this resource {userRating} out of 5 stars
+            </p>
+          )}
+          {!token && (
+            <p className="text-xs text-muted-foreground italic">
+              Please sign in to rate resources
+            </p>
+          )}
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-wrap gap-3">
-          {resource.type === "PDF" && (
-            <Button onClick={handleView} className="flex-1 sm:flex-none">
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Open PDF
-            </Button>
-          )}
-          <Button
-            onClick={handleDownload}
-            variant={resource.type === "PDF" ? "outline" : "default"}
-            className="flex-1 sm:flex-none"
-          >
+        {/* 6️⃣ ACTION BUTTONS SECTION */}
+        <div className="flex flex-wrap gap-3 pt-4 border-t">
+          <div className="w-full mb-2">
+            <PostActions
+              postId={resource._id}
+              initialLikes={resource.likesCount ?? resource.upvotes?.length ?? 0}
+              initialDislikes={resource.dislikesCount ?? resource.downvotes?.length ?? 0}
+              initialComments={resource.commentsCount ?? resource.commentCount ?? 0}
+              initialInteraction={resource.userVoteStatus === "upvoted" ? "like" : resource.userVoteStatus === "downvoted" ? "dislike" : "none"}
+              initialIsSaved={isSaved}
+              size="md"
+              showBorder={false}
+            />
+          </div>
+
+          <Button onClick={handleDownload} size="lg">
             {resource.type === "Link" || resource.type === "Video" ? (
               <>
                 <ExternalLink className="h-4 w-4 mr-2" />
@@ -399,30 +385,20 @@ const ResourceDetail = () => {
               </>
             )}
           </Button>
-          <Button
-            variant={isSaved ? "default" : "outline"}
+
+          <Button 
+            variant={isSaved ? "secondary" : "outline"} 
+            size="lg" 
             onClick={handleSave}
-            className="flex-1 sm:flex-none"
+            className={`transition-all duration-300 ${isSaved ? "bg-primary/10 text-primary border-primary/20" : ""}`}
           >
-            {isSaved ? (
-              <>
-                <BookmarkCheck className="h-4 w-4 mr-2" />
-                Saved
-              </>
-            ) : (
-              <>
-                <Bookmark className="h-4 w-4 mr-2" />
-                Save
-              </>
-            )}
+            <Bookmark className={`h-4 w-4 mr-2 ${isSaved ? "fill-current" : ""}`} />
+            {isSaved ? "Saved to Library" : "Save for Later"}
           </Button>
-          <Button variant="outline">
+
+          <Button variant="outline" size="lg">
             <Share2 className="h-4 w-4 mr-2" />
             Share
-          </Button>
-          <Button variant="ghost" className="text-muted-foreground">
-            <Flag className="h-4 w-4 mr-2" />
-            Report
           </Button>
         </div>
       </div>

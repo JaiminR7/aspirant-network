@@ -75,6 +75,26 @@ export const questionService = {
   },
 
   /**
+   * Upvote a question
+   * @param {string} id - Question ID
+   * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }
+   */
+  upvote: async (id) => {
+    const response = await api.post(`/questions/${id}/upvote`);
+    return response.data;
+  },
+
+  /**
+   * Downvote a question
+   * @param {string} id - Question ID
+   * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }
+   */
+  downvote: async (id) => {
+    const response = await api.post(`/questions/${id}/downvote`);
+    return response.data;
+  },
+
+  /**
    * Vote on a question (upvote/downvote)
    * @param {string} id - Question ID
    * @param {string} voteType - 'up' or 'down'
@@ -96,7 +116,17 @@ export const questionService = {
   },
 
   /**
-   * Mark question as solved
+   * Toggle question solved status
+   * @param {string} id - Question ID
+   * @returns {Promise}
+   */
+  toggleSolve: async (id) => {
+    const response = await api.patch(`/questions/${id}/solve`);
+    return response.data;
+  },
+
+  /**
+   * Mark question as solved (with accepted answer)
    * @param {string} id - Question ID
    * @param {string} answerId - ID of the accepted answer
    * @returns {Promise}

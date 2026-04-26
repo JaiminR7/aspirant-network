@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { subjectService } from "../services/subjectService";
+import { searchService } from "../services/searchService";
+import { formatRelativeTime } from "../utils/dateUtils";
 import {
   Select,
   SelectContent,
@@ -91,15 +94,12 @@ const Search = () => {
 
   const fetchSubjects = async () => {
     try {
-      // TODO: Replace with actual API endpoint when implemented
-      const mockSubjects = [
-        { _id: "1", name: "Mathematics" },
-        { _id: "2", name: "Physics" },
-        { _id: "3", name: "Chemistry" },
-        { _id: "4", name: "Biology" },
-        { _id: "5", name: "English" },
-      ];
-      setSubjects(mockSubjects);
+      const response = await subjectService.getSubjects();
+      if (response.success && Array.isArray(response.data)) {
+        setSubjects(response.data);
+      } else {
+        console.error("Invalid response format:", response);
+      }
     } catch (error) {
       console.error("Error fetching subjects:", error);
     }
@@ -108,35 +108,13 @@ const Search = () => {
   const fetchTopics = async (subjectId) => {
     try {
       setLoadingTopics(true);
-      // TODO: Replace with actual API endpoint when implemented
-      const mockTopics = {
-        1: [
-          { _id: "t1", name: "Algebra" },
-          { _id: "t2", name: "Calculus" },
-          { _id: "t3", name: "Geometry" },
-        ],
-        2: [
-          { _id: "t4", name: "Mechanics" },
-          { _id: "t5", name: "Thermodynamics" },
-          { _id: "t6", name: "Optics" },
-        ],
-        3: [
-          { _id: "t7", name: "Organic Chemistry" },
-          { _id: "t8", name: "Inorganic Chemistry" },
-          { _id: "t9", name: "Physical Chemistry" },
-        ],
-        4: [
-          { _id: "t10", name: "Botany" },
-          { _id: "t11", name: "Zoology" },
-          { _id: "t12", name: "Genetics" },
-        ],
-        5: [
-          { _id: "t13", name: "Grammar" },
-          { _id: "t14", name: "Vocabulary" },
-          { _id: "t15", name: "Reading Comprehension" },
-        ],
-      };
-      setTopics(mockTopics[subjectId] || []);
+      const response = await subjectService.getTopicsBySubject(subjectId);
+      if (response.success && Array.isArray(response.data)) {
+        setTopics(response.data);
+      } else {
+        console.error("Invalid response format:", response);
+        setTopics([]);
+      }
     } catch (error) {
       console.error("Error fetching topics:", error);
     } finally {
@@ -158,48 +136,36 @@ const Search = () => {
 
     try {
       // Build query parameters
-      const params = new URLSearchParams({
+      const queryParams = {
         query: searchQuery.trim(),
-      });
+      };
 
-      if (filters.subject) params.append("subject", filters.subject);
-      if (filters.topic) params.append("topic", filters.topic);
-      if (filters.tags.length > 0)
-        params.append("tags", filters.tags.join(","));
+      if (filters.subject && filters.subject !== "all") queryParams.subject = filters.subject;
+      if (filters.topic && filters.topic !== "all") queryParams.topic = filters.topic;
+      if (filters.tags.length > 0) queryParams.tags = filters.tags.join(",");
 
       // Update URL
       const urlParams = new URLSearchParams({
         q: searchQuery.trim(),
         type: contentType,
       });
-      if (filters.subject) urlParams.append("subject", filters.subject);
-      if (filters.topic) urlParams.append("topic", filters.topic);
+      if (filters.subject && filters.subject !== "all") urlParams.append("subject", filters.subject);
+      if (filters.topic && filters.topic !== "all") urlParams.append("topic", filters.topic);
       if (filters.tags.length > 0)
         urlParams.append("tags", filters.tags.join(","));
       setSearchParams(urlParams);
 
-      let endpoint = "http://localhost:5000/api/search";
-
-      // Choose endpoint based on content type
+      let data;
+      // Choose service method based on content type
       if (contentType === "questions") {
-        endpoint = "http://localhost:5000/api/search/questions";
+        data = await searchService.searchQuestions(queryParams);
       } else if (contentType === "resources") {
-        endpoint = "http://localhost:5000/api/search/resources";
+        data = await searchService.searchResources(queryParams);
       } else if (contentType === "stories") {
-        endpoint = "http://localhost:5000/api/search/stories";
+        data = await searchService.searchStories(queryParams);
+      } else {
+        data = await searchService.search(queryParams);
       }
-
-      const response = await fetch(`${endpoint}?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Search failed");
-      }
-
-      const data = await response.json();
 
       // Handle different response structures
       if (contentType === "all") {
@@ -268,17 +234,6 @@ const Search = () => {
   const hasActiveFilters =
     filters.subject || filters.topic || filters.tags.length > 0;
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
 
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
@@ -577,7 +532,7 @@ const Search = () => {
                                   {question.totalAnswers || 0}
                                 </div>
                                 <span className="text-border">•</span>
-                                <span>{formatDate(question.createdAt)}</span>
+                                <span>{formatRelativeTime(question.createdAt)}</span>
                               </div>
                             </div>
                           </div>
@@ -602,13 +557,18 @@ const Search = () => {
                         <div
                           key={resource._id}
                           className="feed-card hover:bg-secondary/50 cursor-pointer transition-colors"
-                          onClick={() =>
+                          onClick={() => {
+                            if (resource.type === "PDF" || resource.type === "Image") {
+                              navigate(`/resources/${resource._id}/view`);
+                              return;
+                            }
                             window.open(
                               resource.content?.externalLink ||
                                 resource.content?.url,
                               "_blank",
-                            )
-                          }
+                              "noopener,noreferrer",
+                            );
+                          }}
                         >
                           <div className="flex items-start gap-3">
                             <div className="flex-shrink-0 mt-1">
@@ -697,7 +657,7 @@ const Search = () => {
                                   {story.views || 0}
                                 </div>
                                 <span className="text-border">•</span>
-                                <span>{formatDate(story.createdAt)}</span>
+                                <span>{formatRelativeTime(story.createdAt)}</span>
                               </div>
                             </div>
                           </div>

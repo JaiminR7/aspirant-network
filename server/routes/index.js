@@ -8,6 +8,12 @@ const resourceRoutes = require('./resources');
 const searchRoutes = require('./search');
 const userRoutes = require('./users');
 const storyRoutes = require('./stories');
+const postRoutes = require('./posts');
+const commentRoutes = require('./comments');
+const interactionRoutes = require('./interactions');
+const adminRoutes = require('./admin');
+const circleRoutes = require('./circles');
+const circlePostRoutes = require('./circlePosts');
 const subjectRoutes = require('./subjects');
 const topicRoutes = require('./topics');
 const activityRoutes = require('./activities');
@@ -36,6 +42,24 @@ router.use('/users', userRoutes);
 
 // Story routes (protected - requires auth + exam context)
 router.use('/stories', storyRoutes);
+
+// Feed posts routes (protected - personalized + explore)
+router.use('/posts', postRoutes);
+
+// Post comments routes (protected)
+router.use('/comments', commentRoutes);
+
+// Post interactions routes (protected)
+router.use('/interactions', interactionRoutes);
+
+// Admin routes (protected - admin role only)
+router.use('/admin', adminRoutes);
+
+// Circle routes (protected - requires auth + exam context)
+router.use('/circles', circleRoutes);
+
+// Circle post routes (protected - requires auth + exam context)
+router.use('/circle-posts', circlePostRoutes);
 
 // Subject routes (protected - requires auth + exam context)
 router.use('/subjects', subjectRoutes);

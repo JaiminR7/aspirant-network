@@ -2,8 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Login from "../pages/Login";
 import Signup from "../pages/Signup";
+import Landing from "../pages/Landing";
 import ForgotPassword from "../pages/ForgotPassword";
-import ResetPassword from "../pages/ResetPassword";
 import AppLayout from "../layouts/AppLayout";
 
 // Protected Route wrapper - redirects to login if not authenticated
@@ -22,7 +22,7 @@ const ProtectedRoute = ({ children }) => {
   }
 
   if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -51,9 +51,23 @@ const PublicRoute = ({ children }) => {
 };
 
 const AppRouter = () => {
+  const { isAuthenticated, loading } = useAuth();
+
   return (
     <BrowserRouter>
       <Routes>
+        {/* Landing Page - Accessible to everyone, but redirects to /home if logged in and at root exactly */}
+        <Route
+          path="/"
+          element={
+            !loading && isAuthenticated() ? (
+              <Navigate to="/home" replace />
+            ) : (
+              <Landing />
+            )
+          }
+        />
+
         {/* Public Routes - redirect to /home if authenticated */}
         <Route
           path="/login"
@@ -79,16 +93,7 @@ const AppRouter = () => {
             </PublicRoute>
           }
         />
-        <Route
-          path="/reset-password/:token"
-          element={
-            <PublicRoute>
-              <ResetPassword />
-            </PublicRoute>
-          }
-        />
-
-        {/* Protected Routes - redirect to /login if not authenticated */}
+        {/* Protected Routes - redirect to / if not authenticated */}
         <Route
           path="/*"
           element={
@@ -97,9 +102,6 @@ const AppRouter = () => {
             </ProtectedRoute>
           }
         />
-
-        {/* Default redirect */}
-        <Route path="/" element={<Navigate to="/home" replace />} />
       </Routes>
     </BrowserRouter>
   );

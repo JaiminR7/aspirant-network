@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
+import Stepper, { Step } from "../components/ui/Stepper";
 import {
   Select,
   SelectContent,
@@ -10,40 +11,23 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import {
-  Sparkles,
-  User,
-  AtSign,
-  Mail,
-  Lock,
-  Calendar,
-  GraduationCap,
-  Target,
-  AlertCircle,
-  Eye,
-  EyeOff,
-  ChevronRight,
-  ShieldCheck,
-  Clock,
+  Sparkles, User, AtSign, Mail, Lock, Calendar, GraduationCap,
+  Target, AlertCircle, Eye, EyeOff, ChevronRight, ShieldCheck,
+  Clock, ArrowLeft, Rocket, CheckCircle2, UserPlus, Fingerprint,
+  Check
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import AuthLayout from "../layouts/AuthLayout";
+import { authService } from "../services/authService";
+import { EXAMS, LEVELS } from "../constants/appConstants";
 
-const EXAMS = [
-  "CAT",
-  "UPSC",
-  "JEE",
-  "NEET",
-  "GATE",
-  "SSC",
-  "IBPS",
-  "GMAT",
-  "GRE",
-  "IELTS",
-];
-const LEVELS = ["Beginner", "Intermediate", "Advanced"];
 
 const Signup = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  // State
+  const [activeStep, setActiveStep] = useState(1);
   const [formData, setFormData] = useState({
     name: "",
     username: "",
@@ -59,84 +43,56 @@ const Signup = () => {
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [step, setStep] = useState(1); // Multi-step form
-
+  
   // OTP States
-  const [showOtpSection, setShowOtpSection] = useState(false);
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [otpError, setOtpError] = useState("");
-  const [timer, setTimer] = useState(120); // 2 minutes in seconds
+  const [timer, setTimer] = useState(120);
   const [canResend, setCanResend] = useState(false);
-  const [otpLoading, setOtpLoading] = useState(false);
-  const [resendLoading, setResendLoading] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
-
   const otpInputRefs = useRef([]);
 
-  // Password strength validation
-  const validatePassword = (password) => {
-    const requirements = {
-      minLength: password.length >= 6,
-      hasUpperCase: /[A-Z]/.test(password),
-      hasNumber: /[0-9]/.test(password),
-      hasSymbol: /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\;'/`~]/.test(password),
-    };
+  // Password Requirements Logic
+  const passwordRequirements = [
+    { id: 'length', label: '6+ Characters', test: (p) => p.length >= 6 },
+    { id: 'uppercase', label: 'Uppercase Letter', test: (p) => /[A-Z]/.test(p) },
+    { id: 'number', label: 'Number', test: (p) => /[0-9]/.test(p) },
+    { id: 'special', label: 'Special Character', test: (p) => /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\;'/`~]/.test(p) },
+  ];
 
-    const allValid = Object.values(requirements).every(Boolean);
+  const isPasswordValid = passwordRequirements.every(req => req.test(formData.password));
 
-    return { requirements, allValid };
-  };
-
-  const getPasswordStrength = (password) => {
-    if (!password) return { label: "", color: "", width: "0%" };
-
-    const { requirements } = validatePassword(password);
-    const validCount = Object.values(requirements).filter(Boolean).length;
-
-    if (validCount === 4)
-      return { label: "Strong", color: "bg-green-500", width: "100%" };
-    if (validCount === 3)
-      return { label: "Good", color: "bg-yellow-500", width: "75%" };
-    if (validCount === 2)
-      return { label: "Fair", color: "bg-orange-500", width: "50%" };
-    return { label: "Weak", color: "bg-red-500", width: "25%" };
-  };
-
+  // Handle Input Changes
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    // Clear error for this field
-    if (errors[name]) {
-      setErrors((prev) => ({
-        ...prev,
-        [name]: "",
-      }));
-    }
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: "" }));
   };
 
   const handleSelectChange = (name, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    // Clear error for this field
-    if (errors[name]) {
-      setErrors((prev) => ({
-        ...prev,
-        [name]: "",
-      }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: "" }));
+  };
+
+  const handleOtpChange = (index, value) => {
+    if (value && !/^\d$/.test(value)) return;
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    if (value && index < 5) otpInputRefs.current[index + 1]?.focus();
+  };
+
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
     }
   };
 
   // Timer Effect
   useEffect(() => {
     let interval;
-    if (showOtpSection && timer > 0 && !canResend) {
+    if (activeStep === 3 && timer > 0 && !canResend) {
       interval = setInterval(() => {
-        setTimer((prev) => {
+        setTimer(prev => {
           if (prev <= 1) {
             setCanResend(true);
             return 0;
@@ -146,959 +102,430 @@ const Signup = () => {
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [showOtpSection, timer, canResend]);
+  }, [activeStep, timer, canResend]);
 
-  // Format timer to MM:SS
   const formatTimer = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Handle OTP input change
-  const handleOtpChange = (index, value) => {
-    // Only allow numeric input
-    if (value && !/^\d$/.test(value)) return;
-
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-    setOtpError("");
-
-    // Auto-focus next input
-    if (value && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  // Handle OTP input keydown
-  const handleOtpKeyDown = (index, e) => {
-    if (e.key === "Backspace" && !otp[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  // Handle OTP paste
-  const handleOtpPaste = (e) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData("text").slice(0, 6);
-
-    if (!/^\d+$/.test(pastedData)) return;
-
-    const newOtp = [...otp];
-    for (let i = 0; i < pastedData.length && i < 6; i++) {
-      newOtp[i] = pastedData[i];
-    }
-    setOtp(newOtp);
-    setOtpError("");
-
-    // Focus last filled input or next empty
-    const nextIndex = Math.min(pastedData.length, 5);
-    otpInputRefs.current[nextIndex]?.focus();
-  };
-
-  // Send OTP API
+  // Logic Functions
   const sendOtp = async () => {
-    setOtpLoading(true);
-    setOtpError("");
+    setLoading(true);
     setApiError("");
-
     try {
-      const response = await fetch("http://localhost:5000/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to send OTP");
-      }
-
-      setShowOtpSection(true);
+      await authService.sendOtp(formData.email.trim().toLowerCase());
+      
       setTimer(120);
       setCanResend(false);
       setOtp(["", "", "", "", "", ""]);
-
-      // Focus first OTP input
+      setActiveStep(3); // Move to OTP step
       setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
     } catch (error) {
-      setApiError(error.message || "Failed to send OTP. Please try again.");
+      setApiError(error.message);
     } finally {
-      setOtpLoading(false);
+      setLoading(false);
     }
   };
 
-  // Resend OTP
-  const resendOtp = async () => {
-    setResendLoading(true);
-    setOtpError("");
-
-    try {
-      const response = await fetch("http://localhost:5000/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to resend OTP");
-      }
-
-      setTimer(120);
-      setCanResend(false);
-      setOtp(["", "", "", "", "", ""]);
-      otpInputRefs.current[0]?.focus();
-    } catch (error) {
-      setOtpError(error.message || "Failed to resend OTP");
-    } finally {
-      setResendLoading(false);
-    }
-  };
-
-  // Verify OTP
   const verifyOtp = async () => {
     const otpValue = otp.join("");
-
     if (otpValue.length !== 6) {
-      setOtpError("Please enter all 6 digits");
+      setApiError("Please enter all 6 digits");
       return;
     }
-
-    setOtpLoading(true);
-    setOtpError("");
-
+    setLoading(true);
+    setApiError("");
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/auth/verify-otp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: formData.email.trim().toLowerCase(),
-            otp: otpValue,
-          }),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Invalid OTP");
-      }
-
+      await authService.verifyOtp({
+        email: formData.email.trim().toLowerCase(),
+        otp: otpValue,
+      });
+      
       setEmailVerified(true);
-      setShowOtpSection(false);
-      setStep(2); // Move to next step
+      setActiveStep(4); // Move to Password step
     } catch (error) {
-      setOtpError(error.message || "Invalid OTP. Please try again.");
+      setApiError(error.message);
       setOtp(["", "", "", "", "", ""]);
       otpInputRefs.current[0]?.focus();
     } finally {
-      setOtpLoading(false);
+      setLoading(false);
     }
   };
 
-  const validateForm = () => {
+  const handleSignup = async () => {
+    setLoading(true);
+    setApiError("");
+    try {
+      const data = await authService.signup({
+        name: formData.name.trim(),
+        username: formData.username.trim(),
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+        primaryExam: formData.primaryExam,
+        examPreference: formData.primaryExam,
+        attemptYear: parseInt(formData.attemptYear),
+        level: formData.level,
+      });
+      
+      login(data.user, data.token);
+      setActiveStep(6); // Success step
+      setTimeout(() => navigate("/home"), 2000);
+    } catch (error) {
+      setApiError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validateStep = (step) => {
     const newErrors = {};
-
-    // Name validation
-    if (!formData.name.trim()) {
-      newErrors.name = "Name is required";
-    } else if (formData.name.trim().length < 2) {
-      newErrors.name = "Name must be at least 2 characters";
+    if (step === 2) {
+      if (!formData.name.trim()) newErrors.name = "Full name is required";
+      if (!formData.username.trim()) newErrors.username = "Username is required";
+      else if (formData.username.length < 3) newErrors.username = "Username too short";
+      if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        newErrors.email = "Valid email is required";
+      }
     }
-
-    // Username validation
-    if (!formData.username.trim()) {
-      newErrors.username = "Username is required";
-    } else if (formData.username.trim().length < 3) {
-      newErrors.username = "Username must be at least 3 characters";
-    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-      newErrors.username =
-        "Username can only contain letters, numbers, and underscores";
+    if (step === 4) {
+      if (!formData.password) newErrors.password = "Password is required";
+      else if (!isPasswordValid) newErrors.password = "Please fulfill all requirements";
+      if (formData.password !== formData.confirmPassword) {
+        newErrors.confirmPassword = "Passwords don't match";
+      }
     }
-
-    // Email validation
-    if (!formData.email.trim()) {
-      newErrors.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Invalid email format";
-    }
-
-    // Password validation
-    if (!formData.password) {
-      newErrors.password = "Password is required";
-    } else if (formData.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-    }
-
-    // Confirm password validation
-    if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
-    }
-
-    // Primary exam validation (CRITICAL)
-    if (!formData.primaryExam) {
-      newErrors.primaryExam = "Primary exam is required";
-    }
-
-    // Attempt year validation
-    if (!formData.attemptYear) {
-      newErrors.attemptYear = "Attempt year is required";
+    if (step === 5) {
+      if (!formData.primaryExam) newErrors.primaryExam = "Please select an exam";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setApiError("");
+  const onNext = async (nextStep) => {
+    const currentStep = activeStep;
+    if (!validateStep(currentStep)) return;
 
-    if (!validateForm()) {
+    if (currentStep === 2) {
+      await sendOtp();
+      return; // setActiveStep happens inside sendOtp on success
+    }
+    
+    if (currentStep === 3) {
+      await verifyOtp();
       return;
     }
 
-    setLoading(true);
-
-    try {
-      // Call signup API
-      const response = await fetch("http://localhost:5000/api/auth/signup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          username: formData.username.trim(),
-          email: formData.email.trim().toLowerCase(),
-          password: formData.password,
-          primaryExam: formData.primaryExam,
-          attemptYear: parseInt(formData.attemptYear),
-          level: formData.level,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Signup failed");
-      }
-
-      // Login with returned token and user data
-      login(data.user, data.token);
-
-      // Redirect to home
-      navigate("/home");
-    } catch (error) {
-      console.error("Signup error:", error);
-      setApiError(
-        error.message || "Failed to create account. Please try again.",
-      );
-    } finally {
-      setLoading(false);
+    if (currentStep === 5) {
+      await handleSignup();
+      return;
     }
+
+    setActiveStep(nextStep);
   };
-
-  const nextStep = async () => {
-    // Validate current step before proceeding
-    const newErrors = {};
-
-    if (step === 1) {
-      if (!formData.name.trim()) newErrors.name = "Name is required";
-      if (!formData.username.trim())
-        newErrors.username = "Username is required";
-      if (!formData.email.trim()) newErrors.email = "Email is required";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-        newErrors.email = "Invalid email format";
-      }
-
-      if (Object.keys(newErrors).length > 0) {
-        setErrors(newErrors);
-        return;
-      }
-
-      // If email not verified yet, send OTP
-      if (!emailVerified) {
-        await sendOtp();
-        return;
-      }
-
-      // If verified, proceed to step 2
-      setStep(2);
-    } else if (step === 2) {
-      if (!formData.password) {
-        newErrors.password = "Password is required";
-      } else {
-        const { allValid } = validatePassword(formData.password);
-        if (!allValid) {
-          newErrors.password = "Password does not meet all requirements";
-        }
-      }
-
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = "Passwords don't match";
-      }
-
-      if (Object.keys(newErrors).length > 0) {
-        setErrors(newErrors);
-        return;
-      }
-
-      setStep(step + 1);
-    }
-  };
-
-  const prevStep = () => setStep(step - 1);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-8">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl"></div>
-      </div>
-
-      <div className="w-full max-w-md relative z-10">
-        {/* Logo */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-primary mb-3">
-            <Sparkles className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold text-gradient">Aspirant Network</h1>
-        </div>
-
-        {/* Progress Steps */}
-        <div className="flex items-center justify-center gap-2 mb-6">
-          {[1, 2, 3].map((s) => (
-            <div
-              key={s}
-              className={`h-2 rounded-full transition-all duration-300 ${
-                s === step
-                  ? "w-8 bg-primary"
-                  : s < step
-                    ? "w-8 bg-primary/50"
-                    : "w-8 bg-secondary"
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Signup Card */}
-        <div className="sidebar-card">
-          <h2 className="text-xl font-bold text-foreground text-center mb-1">
-            {step === 1 && "Create your account"}
-            {step === 2 && "Set your password"}
-            {step === 3 && "Exam preferences"}
-          </h2>
-          <p className="text-muted-foreground text-center text-sm mb-6">
-            {step === 1 && "Tell us about yourself"}
-            {step === 2 && "Choose a secure password"}
-            {step === 3 && "Select your target exam"}
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* API Error */}
-            {apiError && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                <span>{apiError}</span>
+    <AuthLayout
+      title={<>Start your journey <br /><span className="text-primary">with the best tools.</span></>}
+      subtitle="Join thousands of students who are already using Aspirant Network to ace their exams through collaborative learning."
+      footer={
+        <p className="text-center text-muted-foreground text-xs font-medium">
+          Already have an account?{" "}
+          <Link to="/login" className="text-primary font-bold hover:underline">
+            Sign in here
+          </Link>
+        </p>
+      }
+    >
+      <Stepper
+        activeStep={activeStep}
+        onNext={(step) => onNext(step)}
+        onBack={(step) => setActiveStep(step)}
+        backButtonText="Back"
+        nextButtonText="Continue"
+        disableStepIndicators={true}
+        className="auth-stepper"
+        nextButtonProps={{
+          style: { display: activeStep === 6 ? 'none' : 'flex' },
+          disabled: loading
+        }}
+      >
+        {/* Step 1: Welcome */}
+        <Step>
+          <div className="text-center py-2">
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4 text-primary">
+              <Rocket className="w-7 h-7" />
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Join the Network</h2>
+            <p className="text-muted-foreground text-sm mb-6">Ready to take your exam preparation to the next level?</p>
+            
+            <div className="space-y-3">
+              <div className="p-4 rounded-2xl bg-secondary/30 border border-border flex items-center gap-4 text-left group hover:border-primary/50 transition-colors cursor-pointer">
+                <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-foreground">Student Account</h4>
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Access study materials and circles</p>
+                </div>
               </div>
-            )}
-
-            {/* Step 1: Basic Info */}
-            {step === 1 && (
-              <>
-                {/* Name */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="name"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Full Name
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <input
-                      id="name"
-                      name="name"
-                      type="text"
-                      value={formData.name}
-                      onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                        errors.name
-                          ? "border-destructive"
-                          : "border-transparent"
-                      } transition-all`}
-                      placeholder="John Doe"
-                    />
-                  </div>
-                  {errors.name && (
-                    <p className="text-sm text-destructive flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.name}
-                    </p>
-                  )}
+              
+              <div className="p-4 rounded-2xl bg-secondary/10 border border-border/30 flex items-center gap-4 text-left grayscale opacity-50">
+                <div className="p-2.5 rounded-xl bg-zinc-200 text-zinc-500">
+                  <GraduationCap className="w-5 h-5" />
                 </div>
-
-                {/* Username */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="username"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Username
-                  </label>
-                  <div className="relative">
-                    <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <input
-                      id="username"
-                      name="username"
-                      type="text"
-                      value={formData.username}
-                      onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                        errors.username
-                          ? "border-destructive"
-                          : "border-transparent"
-                      } transition-all`}
-                      placeholder="johndoe123"
-                    />
-                  </div>
-                  {errors.username && (
-                    <p className="text-sm text-destructive flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.username}
-                    </p>
-                  )}
+                <div>
+                  <h4 className="font-bold text-sm text-foreground">Educator</h4>
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Coming Soon</p>
                 </div>
+              </div>
+            </div>
+          </div>
+        </Step>
 
-                {/* Email */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="email"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Email
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <input
-                      id="email"
-                      name="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      disabled={emailVerified}
-                      className={`w-full pl-10 pr-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                        errors.email
-                          ? "border-destructive"
-                          : emailVerified
-                            ? "border-green-500"
-                            : "border-transparent"
-                      } transition-all ${emailVerified ? "opacity-75" : ""}`}
-                      placeholder="you@example.com"
-                    />
-                    {emailVerified && (
-                      <ShieldCheck className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-green-500" />
-                    )}
-                  </div>
-                  {errors.email && (
-                    <p className="text-sm text-destructive flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.email}
-                    </p>
-                  )}
-                  {emailVerified && (
-                    <p className="text-sm text-green-600 flex items-center gap-1">
-                      <ShieldCheck className="h-3 w-3" />
-                      Email verified successfully
-                    </p>
-                  )}
+        {/* Step 2: Basic Info */}
+        <Step>
+          <div className="py-2">
+            <h2 className="text-2xl font-bold tracking-tight mb-2">About You</h2>
+            <p className="text-muted-foreground text-sm mb-6">Let's start with some basic information.</p>
+            
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Full Name</label>
+                <div className="relative group">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="John Doe"
+                    className="w-full pl-12 pr-4 py-3.5 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
                 </div>
+                {errors.name && <p className="text-[10px] text-destructive font-bold ml-1">{errors.name}</p>}
+              </div>
 
-                {/* OTP Section */}
-                {showOtpSection && !emailVerified && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
-                      <div className="flex items-start gap-3 mb-4">
-                        <div className="p-2 rounded-lg bg-primary/10">
-                          <Mail className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-sm font-semibold text-foreground mb-1">
-                            Verify your email
-                          </h3>
-                          <p className="text-xs text-muted-foreground">
-                            We've sent a 6-digit code to{" "}
-                            <span className="font-medium text-foreground">
-                              {formData.email}
-                            </span>
-                          </p>
-                        </div>
-                      </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Username</label>
+                <div className="relative group">
+                  <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type="text"
+                    name="username"
+                    value={formData.username}
+                    onChange={handleChange}
+                    placeholder="johndoe123"
+                    className="w-full pl-12 pr-4 py-3.5 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
+                </div>
+                {errors.username && <p className="text-[10px] text-destructive font-bold ml-1">{errors.username}</p>}
+              </div>
 
-                      {/* OTP Input Boxes */}
-                      <div className="flex gap-2 justify-center mb-4">
-                        {otp.map((digit, index) => (
-                          <input
-                            key={index}
-                            ref={(el) => (otpInputRefs.current[index] = el)}
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={1}
-                            value={digit}
-                            onChange={(e) =>
-                              handleOtpChange(index, e.target.value)
-                            }
-                            onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                            onPaste={index === 0 ? handleOtpPaste : undefined}
-                            className="w-12 h-12 text-center text-lg font-semibold bg-background rounded-lg border-2 border-border focus:border-primary focus:outline-none transition-all"
-                          />
-                        ))}
-                      </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Email Address</label>
+                <div className="relative group">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="name@example.com"
+                    className="w-full pl-12 pr-4 py-3.5 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
+                </div>
+                {errors.email && <p className="text-[10px] text-destructive font-bold ml-1">{errors.email}</p>}
+              </div>
+            </div>
+            {apiError && <p className="text-[10px] text-destructive mt-6 font-bold flex items-center gap-2 justify-center uppercase tracking-wider animate-shake"><AlertCircle className="w-3 h-3" /> {apiError}</p>}
+          </div>
+        </Step>
 
-                      {/* OTP Error */}
-                      {otpError && (
-                        <p className="text-sm text-destructive flex items-center justify-center gap-1 mb-3">
-                          <AlertCircle className="h-3 w-3" />
-                          {otpError}
-                        </p>
-                      )}
+        {/* Step 3: Verification */}
+        <Step>
+          <div className="py-2">
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Verify Email</h2>
+            <p className="text-muted-foreground text-sm mb-6">Enter the 6-digit code sent to <span className="font-bold text-foreground">{formData.email}</span></p>
+            
+            <div className="space-y-6">
+              <div className="flex gap-2 justify-between">
+                {otp.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => (otpInputRefs.current[index] = el)}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(index, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                    className="w-[14%] aspect-square text-center text-xl font-bold bg-secondary/30 border-2 border-border rounded-xl focus:border-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+                  />
+                ))}
+              </div>
 
-                      {/* Timer / Resend */}
-                      <div className="flex items-center justify-center gap-2 text-sm mb-4">
-                        {!canResend ? (
-                          <>
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-muted-foreground">
-                              Resend OTP in{" "}
-                              <span className="font-semibold text-foreground">
-                                {formatTimer(timer)}
-                              </span>
-                            </span>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={resendOtp}
-                            disabled={resendLoading}
-                            className="text-primary font-semibold hover:underline disabled:opacity-50"
-                          >
-                            {resendLoading ? "Sending..." : "Resend OTP"}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Verify Button */}
-                      <Button
-                        type="button"
-                        onClick={verifyOtp}
-                        disabled={otp.join("").length !== 6 || otpLoading}
-                        className="w-full py-2.5 rounded-lg text-sm font-semibold"
-                      >
-                        {otpLoading ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                            <span>Verifying...</span>
-                          </div>
-                        ) : (
-                          <>
-                            <ShieldCheck className="h-4 w-4 mr-2" />
-                            Verify OTP
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+              <div className="text-center">
+                {!canResend ? (
+                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest flex items-center justify-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    Resend in {formatTimer(timer)}
+                  </p>
+                ) : (
+                  <button onClick={sendOtp} className="text-primary text-[10px] font-bold uppercase tracking-widest hover:underline">
+                    Resend Code
+                  </button>
                 )}
+              </div>
+              {apiError && <p className="text-[10px] text-destructive mt-4 font-bold flex items-center gap-2 justify-center uppercase tracking-wider"><AlertCircle className="w-3 h-3" /> {apiError}</p>}
+            </div>
+          </div>
+        </Step>
 
-                {!showOtpSection && (
-                  <Button
-                    type="button"
-                    onClick={nextStep}
-                    disabled={otpLoading}
-                    className="w-full py-5 rounded-xl text-base font-semibold"
-                  >
-                    {otpLoading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                        <span>Sending OTP...</span>
-                      </div>
-                    ) : (
-                      <>
-                        Continue
-                        <ChevronRight className="h-5 w-5 ml-1" />
-                      </>
-                    )}
-                  </Button>
-                )}
-              </>
-            )}
-
-            {/* Step 2: Password */}
-            {step === 2 && (
-              <>
-                {/* Password */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="password"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <input
-                      id="password"
-                      name="password"
-                      type={showPassword ? "text" : "password"}
-                      value={formData.password}
-                      onChange={handleChange}
-                      className={`w-full pl-10 pr-12 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                        errors.password
-                          ? "border-destructive"
-                          : "border-transparent"
-                      } transition-all`}
-                      placeholder="••••••••"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-5 w-5" />
-                      ) : (
-                        <Eye className="h-5 w-5" />
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Password Strength Indicator */}
-                  {formData.password && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">
-                          Password strength:
-                        </span>
-                        <span
-                          className={`font-semibold ${
-                            getPasswordStrength(formData.password).label ===
-                            "Strong"
-                              ? "text-green-500"
-                              : getPasswordStrength(formData.password).label ===
-                                  "Good"
-                                ? "text-yellow-500"
-                                : getPasswordStrength(formData.password)
-                                      .label === "Fair"
-                                  ? "text-orange-500"
-                                  : "text-red-500"
-                          }`}
-                        >
-                          {getPasswordStrength(formData.password).label}
+        {/* Step 4: Account Setup */}
+        <Step>
+          <div className="py-2">
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Secure Account</h2>
+            <p className="text-muted-foreground text-sm mb-6">Create a password for your account.</p>
+            
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Password</label>
+                <div className="relative group">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="••••••••"
+                    className="w-full pl-12 pr-12 py-3.5 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                
+                {/* Real-time Validation UI */}
+                <div className="grid grid-cols-2 gap-2 mt-4 ml-1">
+                  {passwordRequirements.map((req) => {
+                    const isMet = req.test(formData.password);
+                    return (
+                      <div key={req.id} className="flex items-center gap-2">
+                        <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-colors ${isMet ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                          {isMet ? <Check className="w-2.5 h-2.5" strokeWidth={4} /> : <div className="w-1 h-1 bg-current rounded-full" />}
+                        </div>
+                        <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors ${isMet ? 'text-green-600' : 'text-muted-foreground'}`}>
+                          {req.label}
                         </span>
                       </div>
-                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-300 ${getPasswordStrength(formData.password).color}`}
-                          style={{
-                            width: getPasswordStrength(formData.password).width,
-                          }}
-                        />
-                      </div>
+                    );
+                  })}
+                </div>
+
+                {errors.password && <p className="text-[10px] text-destructive font-bold ml-1 mt-2">{errors.password}</p>}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Confirm Password</label>
+                <div className="relative group">
+                  <Fingerprint className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="••••••••"
+                    className="w-full pl-12 pr-12 py-3.5 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
+                </div>
+                {errors.confirmPassword && <p className="text-[10px] text-destructive font-bold ml-1">{errors.confirmPassword}</p>}
+              </div>
+            </div>
+          </div>
+        </Step>
+
+        {/* Step 5: Preferences */}
+        <Step>
+          <div className="py-2">
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Preferences</h2>
+            <p className="text-muted-foreground text-sm mb-6">Customize your experience by selecting your exam.</p>
+            
+            <div className="space-y-5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Target Exam</label>
+                <Select value={formData.primaryExam} onValueChange={(val) => handleSelectChange('primaryExam', val)}>
+                  <SelectTrigger className="w-full py-6 rounded-2xl border-border bg-secondary/30 focus:ring-primary focus:ring-offset-0 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Target className="w-4 h-4 text-primary" />
+                      <SelectValue placeholder="Select exam" />
                     </div>
-                  )}
+                  </SelectTrigger>
+                  <SelectContent className="rounded-2xl border-border shadow-xl">
+                    {EXAMS.map(exam => (
+                      <SelectItem key={exam.value} value={exam.value} className="rounded-xl py-2.5 transition-colors cursor-pointer text-sm">
+                        {exam.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.primaryExam && <p className="text-[10px] text-destructive font-bold ml-1">{errors.primaryExam}</p>}
+              </div>
 
-                  {/* Password Requirements */}
-                  {formData.password && (
-                    <div className="p-3 rounded-lg bg-secondary/50 space-y-1.5">
-                      {[
-                        {
-                          key: "minLength",
-                          label: "At least 6 characters",
-                          valid: validatePassword(formData.password)
-                            .requirements.minLength,
-                        },
-                        {
-                          key: "hasUpperCase",
-                          label: "One uppercase letter",
-                          valid: validatePassword(formData.password)
-                            .requirements.hasUpperCase,
-                        },
-                        {
-                          key: "hasNumber",
-                          label: "One number",
-                          valid: validatePassword(formData.password)
-                            .requirements.hasNumber,
-                        },
-                        {
-                          key: "hasSymbol",
-                          label: "One special character (!@#$%^&*)",
-                          valid: validatePassword(formData.password)
-                            .requirements.hasSymbol,
-                        },
-                      ].map((req) => (
-                        <div
-                          key={req.key}
-                          className="flex items-center gap-2 text-xs"
-                        >
-                          {req.valid ? (
-                            <div className="w-4 h-4 rounded-full bg-green-500/10 flex items-center justify-center">
-                              <svg
-                                className="w-3 h-3 text-green-500"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M5 13l4 4L19 7"
-                                />
-                              </svg>
-                            </div>
-                          ) : (
-                            <div className="w-4 h-4 rounded-full bg-muted-foreground/10 flex items-center justify-center">
-                              <svg
-                                className="w-2.5 h-2.5 text-muted-foreground"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M6 18L18 6M6 6l12 12"
-                                />
-                              </svg>
-                            </div>
-                          )}
-                          <span
-                            className={
-                              req.valid
-                                ? "text-green-600 dark:text-green-400"
-                                : "text-muted-foreground"
-                            }
-                          >
-                            {req.label}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {errors.password && (
-                    <p className="text-sm text-destructive flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.password}
-                    </p>
-                  )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Year</label>
+                  <input
+                    type="number"
+                    name="attemptYear"
+                    value={formData.attemptYear}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3.5 bg-secondary/30 border border-border rounded-2xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium text-sm"
+                  />
                 </div>
-
-                {/* Confirm Password */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="confirmPassword"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Confirm Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <input
-                      id="confirmPassword"
-                      name="confirmPassword"
-                      type={showPassword ? "text" : "password"}
-                      value={formData.confirmPassword}
-                      onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary border ${
-                        errors.confirmPassword
-                          ? "border-destructive"
-                          : "border-transparent"
-                      } transition-all`}
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  {errors.confirmPassword && (
-                    <p className="text-sm text-destructive flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.confirmPassword}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={prevStep}
-                    className="flex-1 py-5 rounded-xl"
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={nextStep}
-                    disabled={
-                      !validatePassword(formData.password).allValid ||
-                      formData.password !== formData.confirmPassword
-                    }
-                    className="flex-1 py-5 rounded-xl font-semibold"
-                  >
-                    Continue
-                    <ChevronRight className="h-5 w-5 ml-1" />
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {/* Step 3: Exam Preferences */}
-            {step === 3 && (
-              <>
-                {/* Primary Exam */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
-                    <Target className="h-4 w-4 text-primary" />
-                    Primary Exam
-                    <span className="text-xs text-muted-foreground">
-                      (Cannot change later)
-                    </span>
-                  </label>
-                  <Select
-                    value={formData.primaryExam}
-                    onValueChange={(value) =>
-                      handleSelectChange("primaryExam", value)
-                    }
-                  >
-                    <SelectTrigger
-                      className={`w-full py-3 bg-secondary rounded-xl border ${errors.primaryExam ? "border-destructive" : "border-transparent"}`}
-                    >
-                      <SelectValue placeholder="Select your exam" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {EXAMS.map((exam) => (
-                        <SelectItem key={exam} value={exam}>
-                          {exam}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.primaryExam && (
-                    <p className="text-sm text-destructive flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      {errors.primaryExam}
-                    </p>
-                  )}
-                </div>
-
-                {/* Attempt Year */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="attemptYear"
-                    className="text-sm font-medium text-foreground flex items-center gap-2"
-                  >
-                    <Calendar className="h-4 w-4 text-primary" />
-                    Attempt Year
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="attemptYear"
-                      name="attemptYear"
-                      type="number"
-                      min={new Date().getFullYear()}
-                      max={new Date().getFullYear() + 5}
-                      value={formData.attemptYear}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 bg-secondary rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary border border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Level */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
-                    <GraduationCap className="h-4 w-4 text-primary" />
-                    Preparation Level
-                  </label>
-                  <Select
-                    value={formData.level}
-                    onValueChange={(value) =>
-                      handleSelectChange("level", value)
-                    }
-                  >
-                    <SelectTrigger className="w-full py-3 bg-secondary rounded-xl border border-transparent">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Level</label>
+                  <Select value={formData.level} onValueChange={(val) => handleSelectChange('level', val)}>
+                    <SelectTrigger className="w-full py-3.5 h-auto rounded-2xl border-border bg-secondary/30 text-sm">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {level}
-                        </SelectItem>
+                    <SelectContent className="rounded-2xl">
+                      {LEVELS.map(level => (
+                        <SelectItem key={level.value} value={level.value} className="text-sm">{level.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            </div>
+            {apiError && <p className="text-[10px] text-destructive mt-4 font-bold flex items-center gap-2 justify-center uppercase tracking-wider"><AlertCircle className="w-3 h-3" /> {apiError}</p>}
+          </div>
+        </Step>
 
-                <div className="flex gap-3 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={prevStep}
-                    className="flex-1 py-5 rounded-xl"
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="flex-1 py-5 rounded-xl font-semibold"
-                    disabled={loading || !formData.primaryExam}
-                  >
-                    {loading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                        <span>Creating...</span>
-                      </div>
-                    ) : (
-                      "Create Account"
-                    )}
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {/* Login Link */}
-            <p className="text-center text-muted-foreground text-sm pt-2">
-              Already have an account?{" "}
-              <Link
-                to="/login"
-                className="text-primary font-semibold hover:underline"
+        {/* Step 6: Success */}
+        <Step>
+          <div className="text-center py-8">
+            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
               >
-                Log in
-              </Link>
-            </p>
-          </form>
-        </div>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          By signing up, you agree to our{" "}
-          <a href="#" className="text-primary hover:underline">
-            Terms
-          </a>{" "}
-          and{" "}
-          <a href="#" className="text-primary hover:underline">
-            Privacy Policy
-          </a>
-        </p>
-      </div>
-    </div>
+                <CheckCircle2 className="w-8 h-8 text-green-500" />
+              </motion.div>
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight mb-2">Welcome Aboard!</h2>
+            <p className="text-muted-foreground text-sm">Your account has been created. <br />Redirecting to your feed...</p>
+            
+            <div className="mt-6 flex justify-center">
+              <div className="w-6 h-6 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+            </div>
+          </div>
+        </Step>
+      </Stepper>
+    </AuthLayout>
   );
 };
 

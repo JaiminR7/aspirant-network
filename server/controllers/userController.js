@@ -45,10 +45,10 @@ const getUserActivity = async (req, res) => {
   try {
     const userId = req.params.userId || req.userId;
     const [questions, answers, resources, stories] = await Promise.all([
-      Question.find({ createdBy: userId, exam: req.examContext }).populate('subject topic'),
-      Answer.find({ author: userId, exam: req.examContext }).populate('question'),
-      Resource.find({ uploadedBy: userId, exam: req.examContext }).populate('subject topic'),
-      Story.find({ author: userId, exam: req.examContext })
+      Question.find({ createdBy: userId }).populate('subject topic'),
+      Answer.find({ author: userId }).populate('question'),
+      Resource.find({ $or: [{ user: userId }, { createdBy: userId }] }).populate('subject topic'),
+      Story.find({ author: userId })
     ]);
     res.json({ success: true, data: { questions, answers, resources, stories } });
   } catch (error) {
@@ -116,7 +116,7 @@ const deleteAccount = async (req, res) => {
       Answer.deleteMany({ author: userId }),
       
       // Delete user's resources
-      Resource.deleteMany({ uploadedBy: userId }),
+      Resource.deleteMany({ $or: [{ user: userId }, { createdBy: userId }] }),
       
       // Delete user's stories
       Story.deleteMany({ author: userId }),

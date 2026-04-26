@@ -1,33 +1,18 @@
 import { useState } from "react";
 import { useExam } from "../contexts/ExamContext";
+import { EXAMS, LEVELS } from "../constants/appConstants";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { User, GraduationCap, Calendar, Target, Sparkles, ChevronRight, ChevronLeft } from "lucide-react";
+import {
+  User,
+  GraduationCap,
+  Calendar,
+  Target,
+  Sparkles,
+  ChevronRight,
+  ChevronLeft,
+} from "lucide-react";
 
-const EXAMS = [
-  { id: "CAT", name: "CAT", description: "Common Admission Test" },
-  { id: "JEE", name: "JEE", description: "Joint Entrance Examination" },
-  {
-    id: "NEET",
-    name: "NEET",
-    description: "National Eligibility cum Entrance Test",
-  },
-  { id: "UPSC", name: "UPSC", description: "Union Public Service Commission" },
-];
-
-const LEVELS = [
-  { id: "beginner", name: "Beginner", description: "Just started preparation" },
-  {
-    id: "intermediate",
-    name: "Intermediate",
-    description: "Some experience with the exam",
-  },
-  {
-    id: "advanced",
-    name: "Advanced",
-    description: "Experienced and confident",
-  },
-];
 
 const CURRENT_YEAR = new Date().getFullYear();
 const ATTEMPT_YEARS = Array.from({ length: 3 }, (_, i) => CURRENT_YEAR + i);
@@ -102,7 +87,9 @@ export function Onboarding() {
           <div className="inline-flex p-4 rounded-2xl bg-gradient-to-br from-primary to-primary/60 mb-4">
             <Sparkles className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Join Aspirant Network</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            Join Aspirant Network
+          </h1>
           <p className="text-muted-foreground mt-1">
             Step {step} of 3: Let's set up your profile
           </p>
@@ -128,7 +115,9 @@ export function Onboarding() {
                 <div className="p-2 rounded-xl bg-primary/10">
                   <User className="w-5 h-5" />
                 </div>
-                <span className="font-semibold text-foreground">Personal Information</span>
+                <span className="font-semibold text-foreground">
+                  Personal Information
+                </span>
               </div>
 
               <div>
@@ -172,28 +161,32 @@ export function Onboarding() {
                 <div className="p-2 rounded-xl bg-primary/10">
                   <GraduationCap className="w-5 h-5" />
                 </div>
-                <span className="font-semibold text-foreground">Choose Your Primary Exam</span>
+                <span className="font-semibold text-foreground">
+                  Choose Your Primary Exam
+                </span>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
                 {EXAMS.map((exam) => (
                   <div
-                    key={exam.id}
+                    key={exam.value}
                     className={`border rounded-xl p-4 cursor-pointer transition-all ${
-                      formData.primaryExam === exam.id
+                      formData.primaryExam === exam.value
                         ? "border-primary bg-primary/10"
                         : "border-border bg-secondary hover:border-muted-foreground/30"
                     }`}
-                    onClick={() => updateFormData("primaryExam", exam.id)}
+                    onClick={() => updateFormData("primaryExam", exam.value)}
                   >
                     <div className="flex justify-between items-center">
                       <div>
-                        <h3 className="font-semibold text-foreground">{exam.name}</h3>
+                        <h3 className="font-semibold text-foreground">
+                          {exam.label}
+                        </h3>
                         <p className="text-sm text-muted-foreground">
-                          {exam.description}
+                          {exam.fullName}
                         </p>
                       </div>
-                      {formData.primaryExam === exam.id && (
+                      {formData.primaryExam === exam.value && (
                         <Badge>Selected</Badge>
                       )}
                     </div>
@@ -233,30 +226,32 @@ export function Onboarding() {
                 <div className="p-2 rounded-xl bg-primary/10">
                   <Target className="w-5 h-5" />
                 </div>
-                <span className="font-semibold text-foreground">Select Your Level</span>
+                <span className="font-semibold text-foreground">
+                  Select Your Level
+                </span>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
                 {LEVELS.map((level) => (
                   <div
-                    key={level.id}
+                    key={level.value}
                     className={`border rounded-xl p-4 cursor-pointer transition-all ${
-                      formData.level === level.id
+                      formData.level === level.value
                         ? "border-primary bg-primary/10"
                         : "border-border bg-secondary hover:border-muted-foreground/30"
                     }`}
-                    onClick={() => updateFormData("level", level.id)}
+                    onClick={() => updateFormData("level", level.value)}
                   >
                     <div className="flex justify-between items-center">
                       <div>
-                        <h3 className="font-semibold text-foreground">{level.name}</h3>
+                        <h3 className="font-semibold text-foreground">
+                          {level.label}
+                        </h3>
                         <p className="text-sm text-muted-foreground">
                           {level.description}
                         </p>
                       </div>
-                      {formData.level === level.id && (
-                        <Badge>Selected</Badge>
-                      )}
+                      {formData.level === level.value && <Badge>Selected</Badge>}
                     </div>
                   </div>
                 ))}
@@ -270,9 +265,9 @@ export function Onboarding() {
 
           {/* Footer Buttons */}
           <div className="flex justify-between mt-8 pt-6 border-t border-border">
-            <Button 
-              variant="outline" 
-              onClick={handleBack} 
+            <Button
+              variant="outline"
+              onClick={handleBack}
               disabled={step === 1}
               className="rounded-full"
             >
