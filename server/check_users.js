@@ -3,7 +3,7 @@ const User = require('./models/User');
 
 async function checkUsers() {
   try {
-    const uri = 'mongodb+srv://173jaiminradia_db_user:0RKzdCrpcm1aefIi@aspirantnetwok.hfqd7iz.mongodb.net/aspirant-network?appName=AspirantNetwok';
+    const uri = process.env.MONGODB_URI; 
     await mongoose.connect(uri);
     const users = await User.find({}).limit(50).select('email username role clerkId');
     console.log(JSON.stringify(users, null, 2));
