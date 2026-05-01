@@ -5,7 +5,7 @@ import User from '../../models/User.js';
 import { buildUniqueString, pickOne, randomSocialDate } from './utils.mjs';
 
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
-const FEED_EXAMS = ['CAT', 'GATE', 'UPSC', 'JEE', 'NEET', 'SSC-10 boards', 'HSC-12 boards'];
+const FEED_EXAMS = ['JEE', 'NEET', 'GATE', 'CAT', 'UPSC', 'SSC', 'Bank Exams', 'Other'];
 
 const INDIAN_FIRST_NAMES = [
   'Aarav',
@@ -143,6 +143,7 @@ export const seedUsers = async ({ count, exam, bcryptRounds }) => {
         },
         credibilityScore: faker.number.int({ min: 0, max: 500 }),
         isVerified: faker.datatype.boolean({ probability: 0.35 }),
+        isSeeded: true,
         createdAt,
         updatedAt: faker.date.between({ from: createdAt, to: new Date() })
       };

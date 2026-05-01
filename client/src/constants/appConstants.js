@@ -9,8 +9,19 @@ export const EXAMS = [
   { value: "GATE", label: "GATE", fullName: "Graduate Aptitude Test in Engineering" },
   { value: "CAT", label: "CAT", fullName: "Common Admission Test" },
   { value: "UPSC", label: "UPSC", fullName: "Union Public Service Commission" },
-  { value: "SSC-10 boards", label: "SSC-10 boards", fullName: "Class 10 Boards" },
-  { value: "HSC-12 boards", label: "HSC-12 boards", fullName: "Class 12 Boards" },
+  { value: "SSC", label: "SSC", fullName: "Staff Selection Commission" },
+  { value: "Bank Exams", label: "Bank Exams", fullName: "Banking Services Recruitment" },
+  { value: "Other", label: "Other", fullName: "Other Competitive Exams" },
+];
+
+export const STAGES = [
+  { value: "School", label: "School" },
+  { value: "1st Year", label: "1st Year" },
+  { value: "2nd Year", label: "2nd Year" },
+  { value: "3rd Year", label: "3rd Year" },
+  { value: "4th Year", label: "4th Year" },
+  { value: "Graduate", label: "Graduate" },
+  { value: "Working Professional", label: "Working Professional" },
 ];
 
 export const LEVELS = [

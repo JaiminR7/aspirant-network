@@ -7,7 +7,7 @@ const {
   createResource, getAllResources, getResourceById, updateResource, 
   deleteResource, previewResource, downloadResource, getTopRatedResources, 
   upvoteResource, downvoteResource, getTrendingResources,
-  rateResource, getUserResourceRating
+  rateResource, getUserResourceRating, addComment, deleteComment
 } = require('../controllers/resourceController');
 
 // Custom auth middleware for download route that accepts token from query or header
@@ -77,6 +77,8 @@ router.get('/top-rated', auth, validateExamContext, getTopRatedResources);
 router.post('/', auth, validateExamContext, createResource);
 router.get('/', auth, validateExamContext, getAllResources);
 router.post('/:id/rate', auth, validateExamContext, rateResource);
+router.post('/:id/comments', auth, validateExamContext, addComment);
+router.delete('/:id/comments/:commentId', auth, validateExamContext, deleteComment);
 router.get('/:id/rating', auth, validateExamContext, getUserResourceRating);
 router.get('/:id/preview', auth, validateExamContext, previewResource);
 router.get('/:id/download', authFlexible, validateExamContext, downloadResource);

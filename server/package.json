@@ -17,6 +17,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@clerk/clerk-sdk-node": "^4.13.23",
     "@faker-js/faker": "^9.9.0",
     "bcrypt": "^6.0.0",
     "cloudinary": "^1.41.0",

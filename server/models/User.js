@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const { getExamEnum } = require('../constants/exams');
 const { getLevelEnum } = require('../constants/levels');
+const { getStageEnum } = require('../constants/stages');
 
 const userSchema = new mongoose.Schema({
   // Basic Info
@@ -35,12 +36,37 @@ const userSchema = new mongoose.Schema({
       'Please provide a valid email'
     ]
   },
+
+  clerkId: {
+    type: String,
+    unique: true,
+    sparse: true // Allow null for legacy users
+  },
+
+  migratedToClerk: {
+    type: Boolean,
+    default: false
+  },
+
+  legacyAccount: {
+    type: Boolean,
+    default: false
+  },
+
+  isSeeded: {
+    type: Boolean,
+    default: false
+  },
+
+  onboarded: {
+    type: Boolean,
+    default: false
+  },
   
   passwordHash: {
     type: String,
-    required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters'],
-    select: false, // Don't return password by default in queries
+    // Make optional for Clerk users
+    select: false, 
     validate: {
       validator: function(value) {
         // Skip validation if password is being hashed (starts with $2 for bcrypt)
@@ -60,7 +86,6 @@ const userSchema = new mongoose.Schema({
   // CRITICAL: Exam Context (MANDATORY)
   primaryExam: {
     type: String,
-    required: [true, 'Primary exam is required'],
     enum: {
       values: getExamEnum(),
       message: '{VALUE} is not a valid exam'
@@ -79,19 +104,25 @@ const userSchema = new mongoose.Schema({
   // Attempt Year
   attemptYear: {
     type: Number,
-    required: [true, 'Attempt year is required'],
     min: [2024, 'Attempt year must be 2024 or later'],
     max: [2030, 'Attempt year cannot be beyond 2030'],
     validate: {
-      validator: Number.isInteger,
+      validator: (val) => val === undefined || Number.isInteger(val),
       message: 'Attempt year must be a valid integer'
+    }
+  },
+
+  stage: {
+    type: String,
+    enum: {
+      values: getStageEnum(),
+      message: '{VALUE} is not a valid stage'
     }
   },
 
   // Preparation Level
   level: {
     type: String,
-    required: [true, 'Preparation level is required'],
     enum: {
       values: getLevelEnum(),
       message: '{VALUE} is not a valid level'
@@ -220,6 +251,35 @@ const userSchema = new mongoose.Schema({
     default: false
   },
 
+  // Ban Status (Admin enforcement)
+  isBanned: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+
+  banReason: {
+    type: String,
+    enum: ['policy_violation', 'abuse', 'spam', 'other', null],
+    default: null
+  },
+
+  banNotes: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Ban notes cannot exceed 500 characters']
+  },
+
+  bannedAt: {
+    type: Date,
+    default: null
+  },
+
+  bannedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+
   // OTP Verification Fields
   otpHash: {
     type: String,
@@ -264,6 +324,9 @@ userSchema.index({ primaryExam: 1 });
 userSchema.index({ examPreference: 1 });
 userSchema.index({ credibilityScore: -1 });
 userSchema.index({ isActive: 1 });
+userSchema.index({ legacyAccount: 1 });
+userSchema.index({ isSeeded: 1 });
+userSchema.index({ migratedToClerk: 1 });
 
 userSchema.pre('save', async function() {
   if (!this.examPreference) {

@@ -7,17 +7,26 @@ import { ToastProvider } from "./components/ui/toast";
 import AppRouter from "./router/AppRouter";
 
 import { ThemeProvider } from "./context/ThemeContext";
+import { ClerkProvider } from "@clerk/clerk-react";
 
+// Import your publishable key
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+if (!PUBLISHABLE_KEY) {
+  throw new Error("Missing Publishable Key");
+}
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <ThemeProvider>
-      <AuthProvider>
-        <ExamProvider>
-          <ToastProvider>
-            <AppRouter />
-          </ToastProvider>
-        </ExamProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+      <ThemeProvider>
+        <AuthProvider>
+          <ExamProvider>
+            <ToastProvider>
+              <AppRouter />
+            </ToastProvider>
+          </ExamProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ClerkProvider>
   </StrictMode>,
 );

@@ -13,8 +13,9 @@ const EXAMS = {
   JEE: 'JEE',
   NEET: 'NEET',
   GATE: 'GATE',
-  SSC: 'SSC-10 boards',
-  HSC: 'HSC-12 boards'
+  SSC: 'SSC',
+  BANK: 'Bank Exams',
+  OTHER: 'Other'
 };
 
 // Array of exam values for validation and iteration
@@ -53,16 +54,22 @@ const EXAM_METADATA = {
     category: 'Engineering'
   },
   [EXAMS.SSC]: {
-    name: 'SSC-10 boards',
-    fullName: 'SSC - 10 Boards',
-    description: 'Class 10 board preparation',
-    category: 'School Boards'
+    name: 'SSC',
+    fullName: 'Staff Selection Commission',
+    description: 'Government job recruitment exam',
+    category: 'Government Services'
   },
-  [EXAMS.HSC]: {
-    name: 'HSC-12 boards',
-    fullName: 'HSC - 12 Boards',
-    description: 'Class 12 board preparation',
-    category: 'School Boards'
+  [EXAMS.BANK]: {
+    name: 'Bank Exams',
+    fullName: 'Banking Services Recruitment',
+    description: 'IBPS, SBI, and other bank exams',
+    category: 'Banking'
+  },
+  [EXAMS.OTHER]: {
+    name: 'Other',
+    fullName: 'Other Competitive Exams',
+    description: 'Other professional or competitive exams',
+    category: 'Miscellaneous'
   }
 };
 
@@ -103,18 +110,22 @@ const EXAM_SUBJECTS = {
     'Core Engineering'
   ],
   [EXAMS.SSC]: [
-    'Mathematics',
-    'Science',
-    'Social Science',
-    'English'
+    'General Intelligence',
+    'General Awareness',
+    'Quantitative Aptitude',
+    'English Language'
   ],
-  [EXAMS.HSC]: [
-    'Physics',
-    'Chemistry',
-    'Mathematics',
-    'Biology',
-    'English',
-    'Computer Science'
+  [EXAMS.BANK]: [
+    'Reasoning Ability',
+    'Quantitative Aptitude',
+    'English Language',
+    'General Awareness',
+    'Computer Knowledge'
+  ],
+  [EXAMS.OTHER]: [
+    'General Aptitude',
+    'General Knowledge',
+    'Reasoning'
   ]
 };
 

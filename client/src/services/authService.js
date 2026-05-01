@@ -83,6 +83,26 @@ export const authService = {
   },
 
   /**
+   * Sync Clerk user with backend
+   * @param {Object} clerkData - { clerkId, email, name, profilePicture }
+   * @returns {Promise} - { user }
+   */
+  syncClerkUser: async (clerkData) => {
+    const response = await api.post('/users/sync', clerkData);
+    return response.data;
+  },
+
+  /**
+   * Complete user onboarding
+   * @param {Object} profileData - { clerkId, name, username, primaryExam, stage, level, bio }
+   * @returns {Promise}
+   */
+  onboardUser: async (profileData) => {
+    const response = await api.post('/users/onboarding', profileData);
+    return response.data;
+  },
+
+  /**
    * Logout user (client-side only, clears local storage)
    */
   logout: () => {

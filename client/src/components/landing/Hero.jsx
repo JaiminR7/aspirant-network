@@ -32,7 +32,7 @@ const Hero = () => {
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                <Link to="/signup">
+                <Link to="/sign-up">
                   <Button size="lg" className="rounded-2xl px-8 h-14 text-base font-semibold shadow-xl shadow-primary/20 group">
                     Join the Network
                     <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />

@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Interaction = require('../models/Interaction');
 const Post = require('../models/Post');
+const SavedItem = require('../models/SavedItem');
+const { applyInteractionContract } = require('../utils/interactionContract');
 
 const toggleInteraction = async (req, res) => {
   try {
@@ -14,7 +16,7 @@ const toggleInteraction = async (req, res) => {
       return res.status(400).json({ success: false, message: 'type must be like or dislike' });
     }
 
-    const post = await Post.findById(postId).select('_id');
+    const post = await Post.findById(postId);
     if (!post) {
       return res.status(404).json({ success: false, message: 'Post not found' });
     }
@@ -39,6 +41,7 @@ const toggleInteraction = async (req, res) => {
       Interaction.countDocuments({ postId, type: 'dislike' })
     ]);
 
+    // Update Hub Post
     await Post.findByIdAndUpdate(postId, {
       $set: {
         likesCount,
@@ -46,14 +49,48 @@ const toggleInteraction = async (req, res) => {
       }
     });
 
+    // CRITICAL: Synchronize with source model (Story, Question, Resource)
+    if (post.sourceModel && post.sourceId) {
+      try {
+        const SourceModel = mongoose.model(post.sourceModel);
+        const userId = req.userId;
+
+        if (userInteraction === 'like') {
+          await SourceModel.findByIdAndUpdate(post.sourceId, {
+            $addToSet: { upvotes: userId },
+            $pull: { downvotes: userId }
+          });
+        } else if (userInteraction === 'dislike') {
+          await SourceModel.findByIdAndUpdate(post.sourceId, {
+            $addToSet: { downvotes: userId },
+            $pull: { upvotes: userId }
+          });
+        } else {
+          // none - remove from both
+          await SourceModel.findByIdAndUpdate(post.sourceId, {
+            $pull: { upvotes: userId, downvotes: userId }
+          });
+        }
+      } catch (syncError) {
+        console.error(`[sync-interaction] Failed to sync with ${post.sourceModel}:`, syncError.message);
+        // We don't fail the request if sync fails, but we log it
+      }
+    }
+
+    const isSaved = !!(await SavedItem.findOne({ userId: req.userId, postId }).select('_id').lean());
+
     return res.json({
       success: true,
-      data: {
-        postId,
-        likesCount,
-        dislikesCount,
-        userInteraction
-      }
+      data: applyInteractionContract(
+        { postId },
+        {
+          totalLikes: likesCount,
+          totalDislikes: dislikesCount,
+          totalComments: post.commentsCount || 0,
+          interaction: userInteraction,
+          isBookmarked: isSaved
+        }
+      )
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

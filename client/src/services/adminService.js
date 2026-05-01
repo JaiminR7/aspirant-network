@@ -11,11 +11,10 @@ export const adminService = {
     return response.data;
   },
 
-  banUser: async (id, isActive) => {
-    const response = await api.patch(`/admin/users/${id}/ban`, { isActive });
-    return response.data;
-  },
-
+  /**
+   * Delete a user permanently with all owned content
+   * @param {string} id - User ID
+   */
   deleteUser: async (id) => {
     const response = await api.delete(`/admin/users/${id}`);
     return response.data;
@@ -26,6 +25,10 @@ export const adminService = {
     return response.data;
   },
 
+  /**
+   * Delete a post permanently with all related data
+   * @param {string} id - Post ID
+   */
   deletePost: async (id) => {
     const response = await api.delete(`/admin/posts/${id}`);
     return response.data;

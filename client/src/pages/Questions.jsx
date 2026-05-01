@@ -422,10 +422,10 @@ const Questions = () => {
                   {/* Interaction Bar */}
                   <PostActions
                     postId={question._id}
-                    initialLikes={question.upvotes?.length || 0}
-                    initialDislikes={question.downvotes?.length || 0}
-                    initialComments={question.answerCount || 0}
-                    initialInteraction={question.userVoteStatus === "upvoted" ? "like" : question.userVoteStatus === "downvoted" ? "dislike" : "none"}
+                    likesCount={question.upvotes?.length}
+                    dislikesCount={question.downvotes?.length}
+                    commentsCount={question.answerCount}
+                    initialInteraction={question.userVoteStatus === "upvoted" ? "like" : question.userVoteStatus === "downvoted" ? "dislike" : undefined}
                     initialIsSaved={question.isSaved}
                     size="md"
                     showBorder={false}

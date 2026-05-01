@@ -12,44 +12,58 @@ For a complete, code-aligned project inventory and architecture breakdown, see:
 
 ### Core Functionality
 
-- **Exam-Scoped Content**: All content automatically scoped to user's primary exam
-- **Questions & Answers**: Ask doubts, get answers, vote, accept solutions
-- **Resources**: Share and discover study materials (PDFs, videos, links, images)
-- **Stories**: Share success stories and preparation journeys
-- **Search**: Comprehensive search across questions, resources, and tags
+- **Exam-Scoped Community**: Content automatically filtered by user's exam (CAT, GATE, UPSC)
+- **Q&A System**: Ask questions, get answers, rate helpful answers, mark best solution
+- **Resource Library**: Share and discover PDFs, images, links, study materials with star ratings
+- **Story Sharing**: Share preparation journeys anonymously or publicly for peer motivation
+- **Personalized Feed**: Smart feed combining questions, stories, resources filtered by exam + level
+- **Smart Search**: Full-text search across questions, resources, topics
 
 ### User Features
 
-- User authentication with JWT
-- Profile management with credibility scoring
-- Tag-based content organization (max 3 user tags per post)
-- Voting and rating system
-- Save/bookmark functionality
+- **Authentication**: Secure OAuth login with Clerk (Google, email/password)
+- **User Profiles**: Detailed profiles with exam, level, bio, verified badge, contribution stats
+- **Interaction System**: Like/dislike, bookmark, and rate content flexibly
+- **Comments**: Threaded discussions on questions, answers, stories, resources
+- **Profile Tabs**: View your contributions (questions, answers, resources, saved items)
+- **Study Circles**: Form groups with other aspirants for collaborative learning
 
-### Security
+### Admin Features
 
-- Exam context enforced at backend (middleware-based)
-- Protected routes with authentication
-- Input validation and sanitization
-- Safe regex for search (ReDoS prevention)
+- **Admin Dashboard**: View statistics (total users, posts, comments by exam/type)
+- **User Management**: View all users, permanently delete user accounts with cascade cleanup
+- **Post Management**: Delete inappropriate posts/comments
+- **Analytics**: Charts showing post distribution, daily activity trends
+
+### Security & User Experience
+
+- **Exam Context Enforcement**: Backend enforces exam filtering (middleware-based)
+- **Protected Routes**: Authentication required for sensitive operations
+- **Input Validation**: Server-side validation for all user inputs
+- **Cascade Delete**: Deleting user removes all owned content atomically
+- **Dark/Light Mode**: Theme toggle with persistent user preference
 
 ## Tech Stack
 
 ### Frontend
 
-- **React 19** with Vite
-- **React Router v6** for routing
-- **Tailwind CSS** for styling
-- **shadcn/ui** for components
-- Context API for state management
+- **React 19** with Vite (fast build, HMR)
+- **React Router v6** for routing and navigation
+- **Tailwind CSS** for utility-first styling
+- **shadcn/ui** for accessible UI components
+- **Context API** for state management (Auth, Theme, Exam)
+- **Axios** for API requests
+- **Recharts** for admin dashboard charts
+- **Clerk** for OAuth authentication
 
 ### Backend
 
-- **Node.js** with Express
-- **MongoDB** with Mongoose
-- **JWT** for authentication
-- **bcrypt** for password hashing
-- Middleware-based architecture
+- **Node.js** with Express.js for REST API
+- **MongoDB** with Mongoose ODM for database
+- **Cloudinary** for image and PDF storage
+- **Clerk SDK** for authentication integration
+- **MongoDB Transactions** for atomic operations (cascade delete)
+- **JWT/Session** for protected routes
 
 ## Project Structure
 
@@ -113,9 +127,18 @@ Create a `.env` file in the `server` directory:
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/aspirant-network
-JWT_SECRET=your-secret-key-here
-JWT_EXPIRE=7d
 NODE_ENV=development
+CLERK_SECRET_KEY=your-clerk-secret-key
+CLOUDINARY_CLOUD_NAME=your-cloudinary-name
+CLOUDINARY_API_KEY=your-cloudinary-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
+```
+
+Create a `.env.local` file in the `client` directory:
+
+```env
+VITE_API_BASE_URL=http://localhost:5000
+VITE_CLERK_PUBLISHABLE_KEY=your-clerk-publishable-key
 ```
 
 5. Start the development servers
@@ -139,42 +162,75 @@ The application will be available at:
 
 ## API Documentation
 
-### Authentication
+For detailed API reference, see [API_GUIDE.md](docs/API_QUICK_REFERENCE.md)
 
-- `POST /api/auth/signup` - Register new user
-- `POST /api/auth/login` - Login user
-- `POST /api/auth/logout` - Logout user
+### Core API Categories
 
-### Questions
+**Authentication**
 
+- `POST /api/auth/sync` - Sync Clerk user with MongoDB
+- `GET /api/auth/me` - Get current user
+
+**Users**
+
+- `GET /api/users` - Get all users
+- `GET /api/users/:id` - Get user profile
+- `PATCH /api/users/:id` - Update user profile
+- `DELETE /api/users/me` - Delete account with cascade cleanup
+- `POST /api/users/:id/follow` - Follow user
+
+**Feed**
+
+- `GET /api/feed` - Get personalized exam-scoped feed
+- `GET /api/feed?exam=CAT&level=Beginner` - Filtered feed
+
+**Questions**
+
+- `GET /api/questions` - Get questions (paginated, filterable)
 - `POST /api/questions` - Create question
-- `GET /api/questions` - Get all questions (exam-scoped)
-- `GET /api/questions/:id` - Get single question
-- `PATCH /api/questions/:id/vote` - Vote on question
-- `PATCH /api/questions/:id/solve` - Mark question as solved
+- `GET /api/questions/:id` - Get question details
+- `PATCH /api/questions/:id` - Update question
+- `DELETE /api/questions/:id` - Delete question
 
-### Answers
+**Answers**
 
-- `POST /api/questions/:questionId/answers` - Create answer
-- `PATCH /api/answers/:id/vote` - Vote on answer
-- `PATCH /api/answers/:id/accept` - Accept answer
-- `PATCH /api/answers/:id/unaccept` - Unaccept answer
+- `POST /api/answers` - Create answer
+- `GET /api/answers` - Get answers
+- `PATCH /api/answers/:id` - Update answer
+- `DELETE /api/answers/:id` - Delete answer
 
-### Resources
+**Resources**
 
+- `GET /api/resources` - Get resources (paginated)
 - `POST /api/resources` - Create resource
-- `GET /api/resources` - Get all resources (exam-scoped)
-- `GET /api/resources/:id` - Get single resource
-- `PATCH /api/resources/:id/rate` - Rate resource
-- `POST /api/resources/:id/save` - Save/unsave resource
+- `GET /api/resources/:id` - Get resource details
+- `PATCH /api/resources/:id/rate` - Rate resource (1-5)
 
-### Search
+**Stories**
 
-- `GET /api/search` - Global search
-- `GET /api/search/questions` - Search questions
-- `GET /api/search/resources` - Search resources
-- `GET /api/search/tags` - Search by tags
-- `GET /api/search/autocomplete` - Autocomplete suggestions
+- `GET /api/stories` - Get stories
+- `POST /api/stories` - Create story
+- `DELETE /api/stories/:id` - Delete story
+
+**Interactions (Like/Dislike/Bookmark)**
+
+- `POST /api/interactions/like` - Like a post
+- `DELETE /api/interactions/like/:id` - Unlike
+- `POST /api/interactions/bookmark` - Bookmark item
+- `DELETE /api/interactions/bookmark/:id` - Remove bookmark
+
+**Comments**
+
+- `POST /api/comments` - Create comment
+- `PATCH /api/comments/:id` - Update comment
+- `DELETE /api/comments/:id` - Delete comment
+
+**Admin**
+
+- `GET /api/admin/stats` - Dashboard statistics
+- `GET /api/admin/users` - Get all users
+- `DELETE /api/admin/users/:id` - Permanently delete user
+- `DELETE /api/admin/posts/:id` - Delete post
 
 ## Exam Context Architecture
 
@@ -195,32 +251,51 @@ This ensures:
 
 ### ✅ Completed
 
-- Backend models (User, Question, Answer, Resource)
-- Authentication middleware
-- Exam context middleware
-- Input validators
-- All API routes and controllers
-- Tag validation utilities
-- Frontend contexts (Auth, Exam)
-- Router setup with protected routes
-- Authentication pages
+**Core Features:**
 
-### 🚧 In Progress
+- User authentication with Clerk (OAuth + email)
+- User profiles with onboarding (exam/level selection)
+- Question system (create, view, filter by exam/topic)
+- Answer system (create, rate, accept best answer)
+- Resource sharing (PDF, images, links with ratings)
+- Story sharing (anonymous/public prep journeys)
+- Personalized feed (exam + level filtered)
+- Comments on questions, answers, stories, resources
+- Like/dislike system (flexible Interaction model)
+- Bookmark/save functionality
+- User search and profile viewing
+- Dark/Light theme support
+- PDF and image upload via Cloudinary
+- Admin dashboard (user/post management, statistics)
+- User account deletion with cascade cleanup
+- Study circles (groups for collaboration)
 
-- Frontend page components
-- API integration
-- Database configuration
-- Seed data
+**Technical:**
 
-### 📋 Planned
+- Full MERN stack (MongoDB, Express, React, Node.js)
+- Database models (User, Question, Answer, Story, Resource, Comment, Interaction, Circle, etc.)
+- REST API with proper error handling
+- Authentication middleware and route protection
+- Exam context enforcement
+- MongoDB transactions for atomic operations
+- Tag-based content organization
 
-- Story model and APIs
-- Chat system
-- Report/moderation system
-- Real-time notifications
-- Email verification
-- Password reset
-- Advanced analytics
+### 🚧 In Progress / Polish
+
+- Advanced admin features
+- Unban functionality
+- Notification system
+- Analytics dashboard
+
+### 📋 Future Scope
+
+- AI-powered recommendations
+- Real-time chat system
+- Push notifications
+- Mock test platform
+- Gamification (leaderboards, badges)
+- Study group video calls
+- Email notifications for interactions
 
 ## Contributing
 
@@ -237,234 +312,3 @@ This project is licensed under the MIT License.
 ## Contact
 
 Project Link: [https://github.com/yourusername/aspirant-network](https://github.com/yourusername/aspirant-network)
-
-```
-aspirant-network
-├─ ARCHITECTURE.md
-├─ client
-│  ├─ components.json
-│  ├─ eslint.config.js
-│  ├─ index.html
-│  ├─ jsconfig.json
-│  ├─ package-lock.json
-│  ├─ package.json
-│  ├─ postcss.config.js
-│  ├─ PROJECT_RULES.md
-│  ├─ public
-│  │  ├─ vite.svg
-│  │  └─ _redirects
-│  ├─ README.md
-│  ├─ src
-│  │  ├─ assets
-│  │  ├─ components
-│  │  │  ├─ ActivityFeed.jsx
-│  │  │  ├─ CirclePostCard.jsx
-│  │  │  ├─ feed
-│  │  │  │  ├─ Feed.jsx
-│  │  │  │  ├─ FilterBar.jsx
-│  │  │  │  └─ PostCard.jsx
-│  │  │  ├─ FeedCardHeader.jsx
-│  │  │  ├─ InteractionBar.jsx
-│  │  │  ├─ landing
-│  │  │  │  ├─ Community.jsx
-│  │  │  │  ├─ CTASection.jsx
-│  │  │  │  ├─ Features.jsx
-│  │  │  │  ├─ Footer.jsx
-│  │  │  │  ├─ Hero.jsx
-│  │  │  │  ├─ Navbar.jsx
-│  │  │  │  ├─ PlatformPreview.jsx
-│  │  │  │  ├─ SocialProof.jsx
-│  │  │  │  └─ WhyAspirant.jsx
-│  │  │  ├─ post
-│  │  │  │  ├─ PostActions.jsx
-│  │  │  │  ├─ PostContent.jsx
-│  │  │  │  ├─ PostHeader.jsx
-│  │  │  │  ├─ PostTags.jsx
-│  │  │  │  ├─ PostTypeBadge.jsx
-│  │  │  │  └─ postTypeUtils.js
-│  │  │  ├─ ThemeToggle.jsx
-│  │  │  └─ ui
-│  │  │     ├─ badge.jsx
-│  │  │     ├─ button.jsx
-│  │  │     ├─ card.jsx
-│  │  │     ├─ dialog.jsx
-│  │  │     ├─ input.jsx
-│  │  │     ├─ label.jsx
-│  │  │     ├─ select.jsx
-│  │  │     ├─ Stepper.css
-│  │  │     ├─ Stepper.jsx
-│  │  │     ├─ textarea.jsx
-│  │  │     └─ toast.jsx
-│  │  ├─ constants
-│  │  │  └─ allowedComments.js
-│  │  ├─ context
-│  │  │  ├─ AuthContext.jsx
-│  │  │  ├─ ExamContext.jsx
-│  │  │  └─ ThemeContext.jsx
-│  │  ├─ index.css
-│  │  ├─ layouts
-│  │  │  ├─ AppLayout.jsx
-│  │  │  └─ AuthLayout.jsx
-│  │  ├─ lib
-│  │  │  └─ utils.js
-│  │  ├─ main.jsx
-│  │  ├─ pages
-│  │  │  ├─ Activity.jsx
-│  │  │  ├─ AddResource.jsx
-│  │  │  ├─ AddStory.jsx
-│  │  │  ├─ Admin.jsx
-│  │  │  ├─ AdminDashboard.jsx
-│  │  │  ├─ AdminLogin.jsx
-│  │  │  ├─ AskQuestion.jsx
-│  │  │  ├─ CircleDetail.jsx
-│  │  │  ├─ Circles.jsx
-│  │  │  ├─ CreateCircle.jsx
-│  │  │  ├─ CreateCirclePost.jsx
-│  │  │  ├─ ForgotPassword.jsx
-│  │  │  ├─ Home.jsx
-│  │  │  ├─ Landing.jsx
-│  │  │  ├─ Login.jsx
-│  │  │  ├─ Onboarding.jsx
-│  │  │  ├─ PostDetail.jsx
-│  │  │  ├─ Profile.jsx
-│  │  │  ├─ QuestionDetail.jsx
-│  │  │  ├─ Questions.jsx
-│  │  │  ├─ ResetPassword.jsx
-│  │  │  ├─ ResourceDetail.jsx
-│  │  │  ├─ resources
-│  │  │  │  └─ ResourceViewer.jsx
-│  │  │  ├─ Resources.jsx
-│  │  │  ├─ Search.jsx
-│  │  │  ├─ Settings.jsx
-│  │  │  ├─ Share.jsx
-│  │  │  ├─ Signup.jsx
-│  │  │  ├─ Stories.jsx
-│  │  │  └─ StoryDetail.jsx
-│  │  ├─ router
-│  │  │  └─ AppRouter.jsx
-│  │  ├─ services
-│  │  │  ├─ activityService.js
-│  │  │  ├─ adminService.js
-│  │  │  ├─ answerService.js
-│  │  │  ├─ api.js
-│  │  │  ├─ authService.js
-│  │  │  ├─ circleService.js
-│  │  │  ├─ index.js
-│  │  │  ├─ postsService.js
-│  │  │  ├─ questionService.js
-│  │  │  ├─ resourceService.js
-│  │  │  ├─ searchService.js
-│  │  │  ├─ storyService.js
-│  │  │  ├─ subjectService.js
-│  │  │  └─ userService.js
-│  │  └─ utils
-│  │     ├─ circleEvents.js
-│  │     └─ feedOptimistic.js
-│  ├─ tailwind.config.js
-│  └─ vite.config.js
-├─ package-lock.json
-├─ package.json
-├─ PROJECT_FULL_DETAILS.md
-├─ README.md
-├─ server
-│  ├─ API_QUICK_REFERENCE.md
-│  ├─ app.js
-│  ├─ config
-│  │  └─ database.js
-│  ├─ constants
-│  │  ├─ allowedComments.js
-│  │  ├─ exams.js
-│  │  └─ levels.js
-│  ├─ controllers
-│  │  ├─ activityController.js
-│  │  ├─ adminController.js
-│  │  ├─ answerController.js
-│  │  ├─ authController.js
-│  │  ├─ circleController.js
-│  │  ├─ circlePostController.js
-│  │  ├─ commentController.js
-│  │  ├─ interactionController.js
-│  │  ├─ postController.js
-│  │  ├─ questionController.js
-│  │  ├─ resourceController.js
-│  │  ├─ searchController.js
-│  │  ├─ storyController.js
-│  │  ├─ subjectController.js
-│  │  └─ userController.js
-│  ├─ index.js
-│  ├─ middleware
-│  │  ├─ admin.js
-│  │  ├─ adminAuth.js
-│  │  ├─ auth.js
-│  │  ├─ examContext.js
-│  │  └─ upload.js
-│  ├─ models
-│  │  ├─ Activity.js
-│  │  ├─ Answer.js
-│  │  ├─ Circle.js
-│  │  ├─ CirclePost.js
-│  │  ├─ Comment.js
-│  │  ├─ Exam.js
-│  │  ├─ Interaction.js
-│  │  ├─ Post.js
-│  │  ├─ Question.js
-│  │  ├─ Resource.js
-│  │  ├─ SavedItem.js
-│  │  ├─ Story.js
-│  │  ├─ Subject.js
-│  │  ├─ Topic.js
-│  │  └─ User.js
-│  ├─ OTP_IMPLEMENTATION_GUIDE.md
-│  ├─ package-lock.json
-│  ├─ package.json
-│  ├─ REFACTORING_SUMMARY.md
-│  ├─ REFACTOR_GUIDE.md
-│  ├─ routes
-│  │  ├─ activities.js
-│  │  ├─ admin.js
-│  │  ├─ answers.js
-│  │  ├─ auth.js
-│  │  ├─ circlePosts.js
-│  │  ├─ circles.js
-│  │  ├─ comments.js
-│  │  ├─ index.js
-│  │  ├─ interactions.js
-│  │  ├─ posts.js
-│  │  ├─ questions.js
-│  │  ├─ resources.js
-│  │  ├─ search.js
-│  │  ├─ stories.js
-│  │  ├─ subjects.js
-│  │  ├─ topics.js
-│  │  └─ users.js
-│  ├─ scripts
-│  │  ├─ checkSubjects.js
-│  │  ├─ cleanup
-│  │  │  ├─ cleanupInvalidResourceOwnership.js
-│  │  │  ├─ cleanupNonWhitelistComments.mjs
-│  │  │  └─ verifyWhitelistComments.mjs
-│  │  ├─ clearResources.js
-│  │  ├─ clearSubjects.js
-│  │  ├─ fixCircleTopics.js
-│  │  ├─ generateJwtSecret.js
-│  │  ├─ migrateActualCreator.js
-│  │  ├─ seed
-│  │  │  ├─ checkPostsDistribution.mjs
-│  │  │  ├─ checkSeededUserNames.mjs
-│  │  │  ├─ config.mjs
-│  │  │  ├─ runSeeder.mjs
-│  │  │  ├─ seedComments.mjs
-│  │  │  ├─ seedFeedContent.mjs
-│  │  │  ├─ seedInteractions.mjs
-│  │  │  ├─ seedPosts.mjs
-│  │  │  ├─ seedUsers.mjs
-│  │  │  └─ utils.mjs
-│  │  └─ seedSubjectsTopics.js
-│  └─ utils
-│     ├─ dbInitializer.js
-│     ├─ sendEmail.js
-│     ├─ tagUtils.js
-│     └─ validators.js
-└─ TESTING_ASK_QUESTION.md
-
-```

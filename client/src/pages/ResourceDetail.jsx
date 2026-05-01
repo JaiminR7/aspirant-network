@@ -17,9 +17,12 @@ import {
   Share2,
   Loader2,
   Star,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { postsService } from "../services/postsService";
 import { useToast } from "../components/ui/toast";
+import { normalizeInteractionContract } from "../utils/interactionContract";
 
 const ResourceDetail = () => {
   const { id } = useParams();
@@ -35,26 +38,29 @@ const ResourceDetail = () => {
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [ratingLoading, setRatingLoading] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
 
   useEffect(() => {
     fetchResource();
   }, [id]);
 
   const fetchResource = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const response = await resourceService.getById(id);
+      const data = response.data;
+      const interaction = normalizeInteractionContract(data);
+      setResource({ ...data, ...interaction });
+      setIsSaved(interaction.isBookmarked);
       
-      setResource(response.data);
-      setIsSaved(response.data.isSaved);
-
-      // Fetch user's rating if logged in
+      // Fetch user rating if logged in
       if (token) {
         try {
-          const ratingData = await resourceService.getUserRating(id);
-          setUserRating(ratingData.data.rating || 0);
-        } catch (err) {
-          console.warn("Failed to fetch user rating:", err);
+          const ratingRes = await resourceService.getUserRating(id);
+          setUserRating(ratingRes.data.userRating);
+        } catch (ratingErr) {
+          console.warn("Failed to fetch user rating:", ratingErr);
         }
       }
     } catch (error) {
@@ -119,6 +125,36 @@ const ResourceDetail = () => {
     }
   };
 
+  const handleSave = async () => {
+    if (!token) {
+      addToast({ title: "Login required", description: "Please login to save resources.", variant: "error" });
+      return;
+    }
+    if (savePending) return;
+
+    const previousState = isSaved;
+    const postId = resource?.postId || resource?._id;
+    if (!postId) return;
+
+    setIsSaved(!previousState);
+    setSavePending(true);
+    try {
+      if (previousState) {
+        await postsService.unsavePost(postId);
+        addToast({ title: "Removed", description: "Resource removed from your library.", variant: "default" });
+      } else {
+        await postsService.savePost(postId);
+        addToast({ title: "Saved", description: "Resource added to your library.", variant: "success" });
+      }
+      setResource((prev) => (prev ? { ...prev, isSaved: !previousState } : prev));
+    } catch (error) {
+      setIsSaved(previousState);
+      addToast({ title: "Error", description: "Failed to update saved state.", variant: "error" });
+    } finally {
+      setSavePending(false);
+    }
+  };
+
   const handleRate = async (rating) => {
     if (!token) {
       addToast({ title: "Login required", description: "Please login to rate resources.", variant: "error" });
@@ -145,31 +181,31 @@ const ResourceDetail = () => {
     }
   };
 
-  const handleSave = async () => {
-    if (!token) {
-      addToast({ title: "Login required", description: "Please login to save resources.", variant: "error" });
-      return;
-    }
-    if (savePending) return;
-
-    const previousState = isSaved;
-    setIsSaved(!previousState);
-    setSavePending(true);
-
+  const handleAddComment = async () => {
+    if (!commentText.trim() || commentLoading) return;
+    setCommentLoading(true);
     try {
-      if (previousState) {
-        await postsService.unsavePost(id);
-        addToast({ title: "Removed", description: "Resource removed from your library.", variant: "default" });
-      } else {
-        await postsService.savePost(id);
-        addToast({ title: "Saved", description: "Added to your private study collection.", variant: "success" });
-      }
+      const response = await resourceService.addComment(id, commentText.trim());
+      const nextComments = response.data.comments || [];
+      const nextCount = response.data.commentsCount ?? response.data.commentCount ?? nextComments.length;
+      setResource(prev => ({
+        ...prev,
+        comments: nextComments,
+        commentCount: nextCount,
+        commentsCount: nextCount
+      }));
+      setCommentText("");
+      addToast({ title: "Comment added", description: "Your thought has been shared.", variant: "success" });
     } catch (error) {
-      setIsSaved(previousState);
-      addToast({ title: "Error", description: "Failed to update library. Try again.", variant: "error" });
+      console.error("Error adding comment:", error);
+      addToast({ title: "Error", description: error.message || "Failed to add comment.", variant: "error" });
     } finally {
-      setSavePending(false);
+      setCommentLoading(false);
     }
+  };
+
+  const handleCommentClick = () => {
+    document.querySelector('textarea[placeholder*="Share your thoughts"]')?.focus();
   };
 
   if (loading) {
@@ -361,12 +397,19 @@ const ResourceDetail = () => {
         <div className="flex flex-wrap gap-3 pt-4 border-t">
           <div className="w-full mb-2">
             <PostActions
-              postId={resource._id}
-              initialLikes={resource.likesCount ?? resource.upvotes?.length ?? 0}
-              initialDislikes={resource.dislikesCount ?? resource.downvotes?.length ?? 0}
-              initialComments={resource.commentsCount ?? resource.commentCount ?? 0}
-              initialInteraction={resource.userVoteStatus === "upvoted" ? "like" : resource.userVoteStatus === "downvoted" ? "dislike" : "none"}
-              initialIsSaved={isSaved}
+              postId={resource.postId || resource._id}
+              totalLikes={resource.totalLikes}
+              totalDislikes={resource.totalDislikes}
+              totalComments={resource.totalComments}
+              isLiked={resource.isLiked}
+              isDisliked={resource.isDisliked}
+              isBookmarked={resource.isBookmarked}
+              likesCount={resource.likesCount}
+              dislikesCount={resource.dislikesCount}
+              commentsCount={resource.commentsCount ?? resource.commentCount ?? resource.comments?.length}
+              initialInteraction={resource.userInteraction ?? resource.userVoteStatus}
+              initialIsSaved={resource.isSaved}
+              onCommentClick={handleCommentClick}
               size="md"
               showBorder={false}
             />
@@ -400,6 +443,72 @@ const ResourceDetail = () => {
             <Share2 className="h-4 w-4 mr-2" />
             Share
           </Button>
+        </div>
+
+        {/* 7️⃣ COMMENTS SECTION */}
+        <div className="pt-8 border-t space-y-6">
+          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-muted-foreground" />
+            Comments
+            <span className="text-muted-foreground font-normal text-sm">
+              ({resource.commentsCount ?? resource.commentCount ?? resource.comments?.length ?? 0})
+            </span>
+          </h2>
+
+          {/* Add Comment Input */}
+          <div className="space-y-3">
+            <textarea
+              placeholder="Share your thoughts on this resource..."
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              className="w-full bg-secondary/50 border border-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-primary outline-none min-h-[100px] resize-none"
+            />
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={handleAddComment}
+                disabled={!commentText.trim() || commentLoading}
+                className="rounded-full"
+              >
+                {commentLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Post Comment
+              </Button>
+            </div>
+          </div>
+
+          {/* Comment List */}
+          <div className="space-y-4">
+            {!resource.comments || resource.comments.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8 text-sm italic">
+                No comments yet. Be the first to start the conversation!
+              </p>
+            ) : (
+              resource.comments.map((comment, idx) => (
+                <div key={idx} className="flex gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold flex-shrink-0">
+                    {comment.commentedBy?.name?.charAt(0).toUpperCase() || "?"}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">
+                        {comment.commentedBy?.name || "Anonymous"}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDate(comment.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground bg-secondary/20 p-3 rounded-2xl rounded-tl-none border border-border/30">
+                      {comment.content}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>

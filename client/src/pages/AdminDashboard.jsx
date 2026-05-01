@@ -188,23 +188,14 @@ const AdminDashboard = ({ onLogout }) => {
     }));
   }, [stats]);
 
-  const handleToggleUser = async (user) => {
-    try {
-      await adminService.banUser(user._id, !user.isActive);
-      setUsers((prev) =>
-        prev.map((u) =>
-          u._id === user._id ? { ...u, isActive: !u.isActive } : u,
-        ),
-      );
-    } catch (actionError) {
-      setError(
-        actionError?.response?.data?.message || "Failed to update user status",
-      );
-    }
-  };
+  const handleDeleteUser = async (userId, username) => {
+    const confirmed = window.confirm(
+      `⚠️ PERMANENT DELETE: Are you sure you want to permanently delete user "${username}" and ALL their owned content?\n\nThis action cannot be undone.`,
+    );
+    if (!confirmed) return;
 
-  const handleDeleteUser = async (userId) => {
     try {
+      setError("");
       await adminService.deleteUser(userId);
       setUsers((prev) => prev.filter((u) => u._id !== userId));
     } catch (actionError) {
@@ -212,8 +203,14 @@ const AdminDashboard = ({ onLogout }) => {
     }
   };
 
-  const handleDeletePost = async (postId) => {
+  const handleDeletePost = async (postId, postTitle) => {
+    const confirmed = window.confirm(
+      `⚠️ PERMANENT DELETE: Are you sure you want to permanently delete this post?\n\n"${postTitle}"\n\nThis will also delete all comments and interactions. This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+
     try {
+      setError("");
       await adminService.deletePost(postId);
       setPosts((prev) => prev.filter((post) => post._id !== postId));
     } catch (actionError) {
@@ -465,10 +462,7 @@ const AdminDashboard = ({ onLogout }) => {
                   placeholder="Search user by name or username"
                   className="w-64"
                 />
-                <Button
-                  variant="outline"
-                  onClick={() => setUserNameFilter("")}
-                >
+                <Button variant="outline" onClick={() => setUserNameFilter("")}>
                   Clear Search
                 </Button>
               </div>
@@ -483,7 +477,7 @@ const AdminDashboard = ({ onLogout }) => {
                       key={user._id}
                       className="rounded-lg border border-border p-3 flex items-center justify-between gap-3"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground truncate">
                           {user.name}
                         </p>
@@ -494,18 +488,14 @@ const AdminDashboard = ({ onLogout }) => {
                           {user.primaryExam} · {user.level}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleToggleUser(user)}
-                        >
-                          {user.isActive ? "Ban" : "Unban"}
-                        </Button>
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                           size="sm"
                           variant="destructive"
-                          onClick={() => handleDeleteUser(user._id)}
+                          onClick={() =>
+                            handleDeleteUser(user._id, user.username)
+                          }
+                          title="Permanently delete user and all content"
                         >
                           Delete
                         </Button>
@@ -587,7 +577,7 @@ const AdminDashboard = ({ onLogout }) => {
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => handleDeletePost(post._id)}
+                        onClick={() => handleDeletePost(post._id, post.title)}
                       >
                         <Trash2 className="h-4 w-4 mr-1" />
                         Delete

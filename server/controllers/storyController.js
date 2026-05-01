@@ -1,6 +1,8 @@
 const Story = require('../models/Story');
 const Post = require('../models/Post');
 const SavedItem = require('../models/SavedItem');
+const Interaction = require('../models/Interaction');
+const { applyInteractionContract, normalizeInteractionType } = require('../utils/interactionContract');
 
 const getAllStories = async (req, res) => {
   try {
@@ -46,15 +48,17 @@ const getAllStories = async (req, res) => {
     }
 
     const cleanedStories = stories.map(s => {
-      const cleaned = {
+      const cleaned = applyInteractionContract({
         ...s,
-        likesCount: s.upvotes?.length || 0,
-        dislikesCount: s.downvotes?.length || 0,
-        commentsCount: s.comments?.length || 0,
-        isSaved: savedIds.has(s._id.toString()),
         upvotes: undefined,
         downvotes: undefined
-      };
+      }, {
+        totalLikes: s.upvotes?.length || 0,
+        totalDislikes: s.downvotes?.length || 0,
+        totalComments: s.comments?.length || 0,
+        interaction: 'none',
+        isBookmarked: savedIds.has(s._id.toString())
+      });
 
       if (s.isAnonymous) {
         cleaned.author = undefined;
@@ -91,32 +95,44 @@ const getStoryById = async (req, res) => {
     // Add counts and user vote status
     const userId = req.userId?.toString();
     const isOwnStory = story.author?._id?.toString() === userId;
-    // Check for saved status
+    // Check for saved status and get hub postId
     let isSaved = false;
-    if (req.userId) {
-      const post = await Post.findOne({ sourceId: story._id, sourceModel: 'Story' }).select('_id');
-      if (post) {
-        const saved = await SavedItem.findOne({ userId: req.userId, postId: post._id }).select('_id');
+    let userInteraction = 'none';
+    let likesCount = story.upvotes?.length || 0;
+    let dislikesCount = story.downvotes?.length || 0;
+    let postId = null;
+
+    const postHub = await Post.findOne({ sourceId: story._id, sourceModel: 'Story' }).select('_id likesCount dislikesCount');
+    
+    if (postHub) {
+      postId = postHub._id;
+      likesCount = postHub.likesCount || 0;
+      dislikesCount = postHub.dislikesCount || 0;
+
+      if (req.userId) {
+        const [saved, interaction] = await Promise.all([
+          SavedItem.findOne({ userId: req.userId, postId: postHub._id }).select('_id'),
+          Interaction.findOne({ userId: req.userId, postId: postHub._id }).select('type')
+        ]);
         isSaved = !!saved;
+        userInteraction = normalizeInteractionType(interaction?.type || 'none');
       }
     }
 
-    const cleanStory = {
+    const cleanStory = applyInteractionContract({
       ...story,
-      likesCount: story.upvotes?.length || 0,
-      dislikesCount: story.downvotes?.length || 0,
-      commentsCount: story.comments?.length || 0,
+      postId, // Hub ID
       isOwnStory,
-      isSaved,
-      userVoteStatus: story.upvotes?.some(id => id.toString() === userId) 
-        ? 'upvoted'
-        : story.downvotes?.some(id => id.toString() === userId)
-        ? 'downvoted'
-        : 'none',
       upvotes: undefined,
       downvotes: undefined,
       savedBy: undefined,
-    };
+    }, {
+      totalLikes: likesCount,
+      totalDislikes: dislikesCount,
+      totalComments: story.comments?.length || 0,
+      interaction: userInteraction,
+      isBookmarked: isSaved
+    });
 
     if (story.isAnonymous) {
       cleanStory.author = undefined;
@@ -286,13 +302,15 @@ const upvoteStory = async (req, res) => {
         ? 'downvoted' 
         : 'none';
 
-    res.json({ 
-      success: true, 
-      data: { 
-        likesCount: story.upvotes.length, 
-        dislikesCount: story.downvotes.length, 
-        userVoteStatus 
-      } 
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: story.upvotes.length,
+        totalDislikes: story.downvotes.length,
+        totalComments: story.comments?.length || 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -313,13 +331,15 @@ const downvoteStory = async (req, res) => {
         ? 'downvoted' 
         : 'none';
 
-    res.json({ 
-      success: true, 
-      data: { 
-        likesCount: story.upvotes.length, 
-        dislikesCount: story.downvotes.length, 
-        userVoteStatus 
-      } 
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: story.upvotes.length,
+        totalDislikes: story.downvotes.length,
+        totalComments: story.comments?.length || 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -376,7 +396,16 @@ const saveStory = async (req, res) => {
     await story.toggleSave(req.userId);
 
     const isSaved = story.savedBy.some(id => id.toString() === req.userId.toString());
-    res.json({ success: true, data: { isSaved } });
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: story.upvotes?.length || 0,
+        totalDislikes: story.downvotes?.length || 0,
+        totalComments: story.comments?.length || 0,
+        interaction: 'none',
+        isBookmarked: isSaved
+      })
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -396,7 +425,22 @@ const addComment = async (req, res) => {
       .populate({ path: 'comments.user', select: 'name username profilePicture' })
       .lean();
 
-    res.json({ success: true, data: { comments: updated.comments } });
+    res.json({
+      success: true,
+      data: {
+        comments: (updated.comments || []).map((comment) => applyInteractionContract({
+          ...comment
+        }, {
+          totalLikes: 0,
+          totalDislikes: 0,
+          totalComments: 0,
+          interaction: 'none',
+          isBookmarked: false
+        })),
+        commentsCount: updated.comments?.length || 0,
+        totalComments: updated.comments?.length || 0
+      }
+    });
   } catch (error) {
     if (
       error?.name === 'ValidationError' ||
@@ -431,7 +475,22 @@ const deleteComment = async (req, res) => {
       .populate({ path: 'comments.user', select: 'name username profilePicture' })
       .lean();
 
-    res.json({ success: true, data: { comments: updated.comments } });
+    res.json({
+      success: true,
+      data: {
+        comments: (updated.comments || []).map((comment) => applyInteractionContract({
+          ...comment
+        }, {
+          totalLikes: 0,
+          totalDislikes: 0,
+          totalComments: 0,
+          interaction: 'none',
+          isBookmarked: false
+        })),
+        commentsCount: updated.comments?.length || 0,
+        totalComments: updated.comments?.length || 0
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

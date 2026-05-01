@@ -110,6 +110,28 @@ export const resourceService = {
   },
 
   /**
+   * Add comment to a resource
+   * @param {string} id - Resource ID
+   * @param {string} content - Comment text
+   * @returns {Promise}
+   */
+  addComment: async (id, content) => {
+    const response = await api.post(`/resources/${id}/comments`, { content });
+    return response.data;
+  },
+
+  /**
+   * Delete comment from a resource
+   * @param {string} resourceId - Resource ID
+   * @param {string} commentId - Comment ID
+   * @returns {Promise}
+   */
+  deleteComment: async (resourceId, commentId) => {
+    const response = await api.delete(`/resources/${resourceId}/comments/${commentId}`);
+    return response.data;
+  },
+
+  /**
    * Upvote a resource
    * @param {string} id - Resource ID
    * @returns {Promise} - { totalUpvotes, totalDownvotes, userVoteStatus }

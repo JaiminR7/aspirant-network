@@ -1,6 +1,7 @@
 const Post = require('../models/Post');
 const Interaction = require('../models/Interaction');
 const SavedItem = require('../models/SavedItem');
+const { applyInteractionContract, normalizeInteractionType } = require('../utils/interactionContract');
 
 const ANONYMOUS_USER = {
   name: 'Anonymous',
@@ -53,17 +54,20 @@ const enrichPostsWithInteraction = async (posts, userId) => {
 
   return posts.map((post) => {
     const base = typeof post.toObject === 'function' ? post.toObject() : post;
-    const userInteraction = interactionMap.get(base._id.toString()) || 'none';
+    const userInteraction = normalizeInteractionType(interactionMap.get(base._id.toString()) || 'none');
     const isSaved = savedSet.has(base._id.toString());
 
-    return applyAnonymousIdentity({
+    return applyAnonymousIdentity(applyInteractionContract({
       ...base,
       type: base.type || 'question',
       author: base.userId,
-      userInteraction,
-      userVoteStatus: userInteraction === 'none' ? 'none' : `${userInteraction}d`,
-      isSaved
-    });
+    }, {
+      totalLikes: base.likesCount || 0,
+      totalDislikes: base.dislikesCount || 0,
+      totalComments: base.commentsCount || 0,
+      interaction: userInteraction,
+      isBookmarked: isSaved
+    }));
   });
 };
 
@@ -149,18 +153,21 @@ const getPostById = async (req, res) => {
         .lean()
     ]);
 
-    const userInteraction = interaction?.type || 'none';
+    const userInteraction = normalizeInteractionType(interaction?.type || 'none');
 
     return res.json({
       success: true,
-      data: applyAnonymousIdentity({
+      data: applyAnonymousIdentity(applyInteractionContract({
         ...post,
         type: post.type || 'question',
-        author: post.userId,
-        userInteraction,
-        userVoteStatus: userInteraction === 'none' ? 'none' : `${userInteraction}d`,
-        isSaved: !!isSavedItem
-      })
+        author: post.userId
+      }, {
+        totalLikes: post.likesCount || 0,
+        totalDislikes: post.dislikesCount || 0,
+        totalComments: post.commentsCount || 0,
+        interaction: userInteraction,
+        isBookmarked: !!isSavedItem
+      }))
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

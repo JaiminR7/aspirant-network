@@ -13,6 +13,19 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
+    
+    // List of public endpoints that don't need a token
+    const publicEndpoints = ['/auth/login', '/auth/signup', '/auth/send-otp', '/auth/verify-otp', '/auth/forgot-password', '/auth/verify-reset-otp', '/auth/reset-password', '/users/sync'];
+    const isPublic = publicEndpoints.some(endpoint => config.url.includes(endpoint));
+
+    if (!token && !isPublic) {
+      // Create an AbortController to cancel the request
+      const controller = new AbortController();
+      config.signal = controller.signal;
+      controller.abort("No authentication token available - stopping request to prevent 401");
+      return config;
+    }
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

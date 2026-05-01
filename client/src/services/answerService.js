@@ -4,12 +4,23 @@ import api from './api';
 
 export const answerService = {
   /**
-   * Get answers for a question
+   * Get answers for a question (primary nested route)
    * @param {string} questionId - Question ID
    * @param {Object} params - { page, limit, sortBy }
    * @returns {Promise} - { answers, pagination }
    */
   getByQuestion: async (questionId, params = {}) => {
+    const response = await api.get(`/questions/${questionId}/answers`, { params });
+    return response.data;
+  },
+
+  /**
+   * Get answers for a question (named alias — preserved API contract)
+   * @param {string} questionId - Question ID
+   * @param {Object} params - { page, limit, sortBy }
+   * @returns {Promise} - { answers, pagination }
+   */
+  getAnswersByQuestion: async (questionId, params = {}) => {
     const response = await api.get(`/answers/question/${questionId}`, { params });
     return response.data;
   },
@@ -19,40 +30,65 @@ export const answerService = {
    * @param {Object} answerData - { questionId, content, isAnonymous }
    * @returns {Promise} - { answer }
    */
-  create: async (answerData) => {
-    const response = await api.post('/answers', answerData);
+  create: async (questionId, answerData) => {
+    const response = await api.post(`/questions/${questionId}/answers`, answerData);
     return response.data;
   },
 
   /**
    * Update an answer
+   * @param {string} questionId - Question ID
    * @param {string} id - Answer ID
    * @param {Object} updateData - { content }
    * @returns {Promise} - { answer }
    */
-  update: async (id, updateData) => {
-    const response = await api.put(`/answers/${id}`, updateData);
+  update: async (questionId, id, updateData) => {
+    const response = await api.put(`/questions/${questionId}/answers/${id}`, updateData);
     return response.data;
   },
 
   /**
    * Delete an answer
+   * @param {string} questionId - Question ID
    * @param {string} id - Answer ID
    * @returns {Promise}
    */
-  delete: async (id) => {
-    const response = await api.delete(`/answers/${id}`);
+  delete: async (questionId, id) => {
+    const response = await api.delete(`/questions/${questionId}/answers/${id}`);
+    return response.data;
+  },
+
+  /**
+   * Upvote an answer
+   * @param {string} questionId - Question ID
+   * @param {string} id - Answer ID
+   * @returns {Promise} - { likesCount, dislikesCount, userVoteStatus }
+   */
+  upvote: async (questionId, id) => {
+    const response = await api.post(`/questions/${questionId}/answers/${id}/upvote`);
+    return response.data;
+  },
+
+  /**
+   * Downvote an answer
+   * @param {string} questionId - Question ID
+   * @param {string} id - Answer ID
+   * @returns {Promise} - { likesCount, dislikesCount, userVoteStatus }
+   */
+  downvote: async (questionId, id) => {
+    const response = await api.post(`/questions/${questionId}/answers/${id}/downvote`);
     return response.data;
   },
 
   /**
    * Vote on an answer
+   * @param {string} questionId - Question ID
    * @param {string} id - Answer ID
    * @param {string} voteType - 'up' or 'down'
    * @returns {Promise} - { upvotes, downvotes, userVote }
    */
-  vote: async (id, voteType) => {
-    const response = await api.post(`/answers/${id}/vote`, { voteType });
+  vote: async (questionId, id, voteType) => {
+    const response = await api.post(`/questions/${questionId}/answers/${id}/vote`, { voteType });
     return response.data;
   },
 

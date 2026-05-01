@@ -9,7 +9,6 @@ import {
   Award,
   TrendingUp,
   MessageSquare,
-  FileText,
   BookOpen,
   ThumbsUp,
   Calendar,
@@ -29,14 +28,12 @@ import {
 import { postsService } from "../services/postsService";
 import { userService } from "../services/userService";
 import { questionService } from "../services/questionService";
-import { answerService } from "../services/answerService";
 import { resourceService } from "../services/resourceService";
 import { storyService } from "../services/storyService";
 import { formatDate } from "../utils/dateUtils";
 
 const ACTIVITY_TABS = [
   { id: "questions", label: "Questions", icon: MessageSquare },
-  { id: "answers", label: "Answers", icon: FileText },
   { id: "resources", label: "Resources", icon: BookOpen },
   { id: "stories", label: "Stories", icon: Heart },
   { id: "saved", label: "Saved", icon: Bookmark, private: true },
@@ -60,7 +57,6 @@ const Profile = () => {
 
   // Stats counts
   const [questionCount, setQuestionCount] = useState(0);
-  const [answerCount, setAnswerCount] = useState(0);
   const [resourceCount, setResourceCount] = useState(0);
   const [storyCount, setStoryCount] = useState(0);
 
@@ -96,15 +92,15 @@ const Profile = () => {
   }, [profileUser]);
 
   const fetchAllCounts = async () => {
+    if (!currentUser) return;
     const userId = profileUser?._id || currentUser?._id;
     if (!userId) return;
 
     try {
       // Fetch counts for all tabs in parallel using centralized services
-      const [questionsData, answersData, resourcesData, storiesData] =
+      const [questionsData, resourcesData, storiesData] =
         await Promise.all([
           questionService.getQuestions({ createdBy: userId, limit: 1 }),
-          answerService.getAnswersByUser(userId, { limit: 1 }),
           resourceService.getResources({ uploadedBy: userId, limit: 1 }),
           storyService.getStories({ author: userId, limit: 1 }),
         ]);
@@ -112,7 +108,6 @@ const Profile = () => {
       setQuestionCount(
         questionsData.pagination?.total ?? questionsData.data?.length ?? 0,
       );
-      setAnswerCount(answersData.pagination?.total ?? answersData.data?.length ?? 0);
       setResourceCount(
         resourcesData.pagination?.total ?? resourcesData.data?.length ?? 0,
       );
@@ -125,6 +120,7 @@ const Profile = () => {
   };
 
   const fetchProfile = async () => {
+    if (!currentUser && !username) return;
     try {
       setLoading(true);
       setError(null);
@@ -149,6 +145,7 @@ const Profile = () => {
   };
 
   const fetchActivity = async () => {
+    if (!currentUser) return;
     try {
       setActivityLoading(true);
 
@@ -170,9 +167,6 @@ const Profile = () => {
       switch (activeTab) {
         case "questions":
           data = await questionService.getQuestions({ createdBy: userId, ...params });
-          break;
-        case "answers":
-          data = await answerService.getAnswersByUser(userId, params);
           break;
         case "resources":
           data = await resourceService.getResources({ uploadedBy: userId, ...params });
@@ -224,9 +218,6 @@ const Profile = () => {
         case "questions":
           await questionService.delete(itemId);
           break;
-        case "answers":
-          await answerService.delete(itemId);
-          break;
         case "resources":
           await resourceService.delete(itemId);
           break;
@@ -244,9 +235,6 @@ const Profile = () => {
       switch (activeTab) {
         case "questions":
           setQuestionCount((prev) => Math.max(0, prev - 1));
-          break;
-        case "answers":
-          setAnswerCount((prev) => Math.max(0, prev - 1));
           break;
         case "resources":
           setResourceCount((prev) => Math.max(0, prev - 1));
@@ -467,10 +455,6 @@ const Profile = () => {
               <span className="text-muted-foreground">Questions</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="font-bold text-foreground">{answerCount}</span>
-              <span className="text-muted-foreground">Answers</span>
-            </div>
-            <div className="flex items-center gap-1">
               <span className="font-bold text-foreground">{resourceCount}</span>
               <span className="text-muted-foreground">Resources</span>
             </div>
@@ -573,7 +557,7 @@ const Profile = () => {
           ) : activityData.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
               <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                <FileText className="w-8 h-8 text-muted-foreground" />
+                <BookOpen className="w-8 h-8 text-muted-foreground" />
               </div>
               <p className="text-muted-foreground font-medium">
                 {activeTab === "saved" 
@@ -601,10 +585,6 @@ const Profile = () => {
                         else if (item.type === "story") navigate(`/stories/${targetId}`);
                       } else if (activeTab === "questions") {
                         navigate(`/question/${item._id}`);
-                      } else if (activeTab === "answers" && item.question) {
-                        navigate(
-                          `/question/${item.question._id || item.question}`,
-                        );
                       } else if (activeTab === "resources") {
                         navigate(`/resources/${item._id}/view`);
                       } else if (activeTab === "stories") {
@@ -684,9 +664,7 @@ const Profile = () => {
 
                         {/* Title */}
                         <h3 className="text-foreground font-medium mb-1 line-clamp-2">
-                          {activeTab === "answers" && item.question
-                            ? `Answer to: ${item.question.title || "Question"}`
-                            : item.title}
+                          {item.title}
                         </h3>
 
                         {/* Description */}

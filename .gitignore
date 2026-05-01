@@ -48,6 +48,10 @@ coverage/
 *.temp
 .cache/
 
+# Local viva revision guides (not for GitHub)
+VIVA_GUIDE.md
+API_GUIDE.md
+
 # Database
 *.db
 *.sqlite

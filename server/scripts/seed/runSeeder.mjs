@@ -63,22 +63,26 @@ const run = async () => {
     });
     log(`Users seeded: ${users.length}`);
 
-    log('Seeding posts...');
-    const postContexts = await seedPosts({ users, count: config.postsCount });
-    log(`Posts seeded: ${postContexts.length}`);
+    log('Seeding feed content for all exams...');
+    const SUPPORTED_EXAMS = ['JEE', 'NEET', 'GATE', 'CAT', 'UPSC', 'SSC', 'Bank Exams', 'Other'];
+    const totalFeedCounts = { questions: 0, resources: 0, stories: 0, posts: 0 };
 
-    log('Seeding comments...');
-    const commentsCount = await seedComments({ users, postContexts });
-    log(`Comments seeded: ${commentsCount}`);
+    for (const examName of SUPPORTED_EXAMS) {
+      log(`Seeding feed content for ${examName}...`);
+      try {
+        const feedCounts = await seedFeedContent({ users, exam: examName });
+        totalFeedCounts.questions += feedCounts.questions;
+        totalFeedCounts.resources += feedCounts.resources;
+        totalFeedCounts.stories += feedCounts.stories;
+        totalFeedCounts.posts += feedCounts.posts;
+        log(`  -> ${examName} done: q:${feedCounts.questions}, r:${feedCounts.resources}, s:${feedCounts.stories}, p:${feedCounts.posts}`);
+      } catch (error) {
+        log(`  -> Failed seeding ${examName}: ${error.message}`);
+      }
+    }
 
-    log('Seeding interactions...');
-    const interactionsCount = await seedInteractions({ users, postContexts });
-    log(`Interactions seeded: ${interactionsCount}`);
-
-    log('Seeding feed collections (questions/resources/stories)...');
-    const feedCounts = await seedFeedContent({ users, exam: config.exam });
     log(
-      `Feed items seeded -> questions: ${feedCounts.questions}, resources: ${feedCounts.resources}, stories: ${feedCounts.stories}`
+      `Feed items seeded -> questions: ${totalFeedCounts.questions}, resources: ${totalFeedCounts.resources}, stories: ${totalFeedCounts.stories}, total feed posts: ${totalFeedCounts.posts}`
     );
 
     const [usersTotal, postsTotal, commentsTotal, interactionsTotal, questionsTotal, resourcesTotal, storiesTotal] =

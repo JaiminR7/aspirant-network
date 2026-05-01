@@ -16,9 +16,9 @@ const PostTags = ({ tags = [] }) => {
 
   return (
     <div className="flex flex-wrap gap-2 mb-4">
-      {tags.slice(0, 5).map((tag) => (
+      {tags.slice(0, 5).map((tag, index) => (
         <Badge
-          key={tag}
+          key={`${index}-${tag}`}
           className={`rounded-full border-0 text-xs font-medium ${getTagClass(tag)}`}
         >
           #{tag}

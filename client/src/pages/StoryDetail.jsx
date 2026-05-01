@@ -7,44 +7,31 @@ import { Textarea } from "../components/ui/textarea";
 import PostTypeBadge from "../components/post/PostTypeBadge";
 import {
   ArrowLeft,
-  ThumbsUp,
-  ThumbsDown,
   MessageSquare,
-  Bookmark,
-  BookmarkCheck,
-  Share2,
-  Trophy,
-  Calendar,
   Loader2,
-  Link as LinkIcon,
+  Send,
+  Trash2,
+  Calendar,
+  Trophy,
 } from "lucide-react";
+import PostActions from "../components/post/PostActions";
 import { storyService } from "../services/storyService";
-import { postsService } from "../services/postsService";
 import { useToast } from "../components/ui/toast";
 import { formatDate, formatRelativeTime } from "../utils/dateUtils";
+import { normalizeInteractionContract } from "../utils/interactionContract";
 
 const StoryDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, token } = useAuth();
-  const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [story, setStory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [isSaved, setIsSaved] = useState(false);
-  const [voteStatus, setVoteStatus] = useState("none");
-  const [likesCount, setLikesCount] = useState(0);
-  const [dislikesCount, setDislikesCount] = useState(0);
-  const [voteLoading, setVoteLoading] = useState(false);
-
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
-
-  const [copied, setCopied] = useState(false);
-  const [savePending, setSavePending] = useState(false);
 
   useEffect(() => {
     fetchStory();
@@ -56,11 +43,7 @@ const StoryDetail = () => {
       setError(null);
       const response = await storyService.getById(id);
       const s = response.data;
-      setStory(s);
-      setIsSaved(s.isSaved || false);
-      setVoteStatus(s.userVoteStatus || "none");
-      setLikesCount(s.likesCount || 0);
-      setDislikesCount(s.dislikesCount || 0);
+      setStory({ ...s, ...normalizeInteractionContract(s) });
       setComments(s.comments || []);
     } catch (err) {
       console.error("Error fetching story:", err);
@@ -70,49 +53,9 @@ const StoryDetail = () => {
     }
   };
 
-  const handleVote = async (type) => {
-    if (voteLoading) return;
-    setVoteLoading(true);
-    try {
-      const data = await (type === "upvote" 
-        ? storyService.upvote(id) 
-        : storyService.downvote(id));
-      
-      setLikesCount(data.data.likesCount);
-      setDislikesCount(data.data.dislikesCount);
-      setVoteStatus(data.data.userVoteStatus);
-    } catch (err) {
-      console.error("Vote error:", err);
-    } finally {
-      setVoteLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!token) {
-      addToast({ title: "Login required", description: "Please login to save stories.", variant: "error" });
-      return;
-    }
-    if (savePending) return;
-
-    const previousState = isSaved;
-    setIsSaved(!previousState);
-    setSavePending(true);
-
-    try {
-      if (previousState) {
-        await postsService.unsavePost(id);
-        addToast({ title: "Removed", description: "Story removed from your library.", variant: "default" });
-      } else {
-        await postsService.savePost(id);
-        addToast({ title: "Saved", description: "Added to your private study collection.", variant: "success" });
-      }
-    } catch (error) {
-      setIsSaved(previousState);
-      addToast({ title: "Error", description: "Failed to update library. Try again.", variant: "error" });
-    } finally {
-      setSavePending(false);
-    }
+  const handleCommentClick = () => {
+    document.getElementById("comment-input")?.focus();
+    document.getElementById("comments-section")?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleAddComment = async () => {
@@ -120,7 +63,13 @@ const StoryDetail = () => {
     setCommentLoading(true);
     try {
       const data = await storyService.addComment(id, { content: commentText.trim() });
-      setComments(data.data.comments || []);
+      const nextComments = (data.data.comments || []).map((comment) => ({
+        ...comment,
+        ...normalizeInteractionContract(comment),
+      }));
+      const nextCount = data.data.commentsCount ?? nextComments.length;
+      setComments(nextComments);
+      setStory((prev) => (prev ? { ...prev, commentsCount: nextCount } : prev));
       setCommentText("");
     } catch (err) {
       console.error("Comment error:", err);
@@ -132,18 +81,17 @@ const StoryDetail = () => {
   const handleDeleteComment = async (commentId) => {
     try {
       const data = await storyService.deleteComment(id, commentId);
-      setComments(data.data.comments || []);
+      const nextComments = (data.data.comments || []).map((comment) => ({
+        ...comment,
+        ...normalizeInteractionContract(comment),
+      }));
+      const nextCount = data.data.commentsCount ?? nextComments.length;
+      setComments(nextComments);
+      setStory((prev) => (prev ? { ...prev, commentsCount: nextCount } : prev));
     } catch (err) {
       console.error("Delete comment error:", err);
     }
   };
-
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
 
   // ─── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
@@ -231,7 +179,7 @@ const StoryDetail = () => {
 
         {/* ── Content ──────────────────────────────────────────────────────── */}
         <div className="text-sm text-foreground/90 leading-relaxed space-y-3 break-words">
-          {story.content.split("\n").map((para, i) =>
+          {(story.content || "").split("\n").map((para, i) =>
             para.trim() ? (
               <p key={i} className="whitespace-pre-wrap">
                 {para}
@@ -249,9 +197,9 @@ const StoryDetail = () => {
               {story.storyType}
             </Badge>
           )}
-          {visibleTags.map((tag) => (
+          {visibleTags.map((tag, index) => (
             <Badge
-              key={tag}
+              key={`${index}-${tag}`}
               className="rounded-full text-xs px-3 py-1 bg-violet-50 text-violet-700 border-0 font-medium"
             >
               #{tag}
@@ -314,109 +262,25 @@ const StoryDetail = () => {
             </div>
           )}
 
-        {/* ── Action Bar ───────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between pt-3 border-t border-border">
-          <div className="flex items-center gap-0.5">
-            {/* Upvote */}
-            <button
-              type="button"
-              onClick={() => handleVote("upvote")}
-              disabled={voteLoading}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors disabled:opacity-60 ${
-                voteStatus === "upvoted"
-                  ? "text-sky-700"
-                  : "text-muted-foreground hover:text-sky-700"
-              }`}
-            >
-              <span
-                className={`inline-flex items-center justify-center rounded-full border p-1 ${
-                  voteStatus === "upvoted"
-                    ? "border-sky-300 bg-sky-100 text-sky-700"
-                    : "border-sky-200 bg-sky-50 text-sky-600"
-                }`}
-              >
-                <ThumbsUp className="h-4 w-4" />
-              </span>
-              <span>{likesCount}</span>
-            </button>
-
-            {/* Downvote */}
-            <button
-              type="button"
-              onClick={() => handleVote("downvote")}
-              disabled={voteLoading}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors disabled:opacity-60 ${
-                voteStatus === "downvoted"
-                  ? "text-red-700"
-                  : "text-muted-foreground hover:text-red-700"
-              }`}
-            >
-              <span
-                className={`inline-flex items-center justify-center rounded-full border p-1 ${
-                  voteStatus === "downvoted"
-                    ? "border-red-300 bg-red-100 text-red-700"
-                    : "border-red-200 bg-red-50 text-red-500"
-                }`}
-              >
-                <ThumbsDown className="h-4 w-4" />
-              </span>
-              <span>{dislikesCount}</span>
-            </button>
-
-            {/* Comments anchor */}
-            <button
-              onClick={() =>
-                document
-                  .getElementById("comments-section")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-muted-foreground hover:text-emerald-700 transition-colors"
-            >
-              <span className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 p-1">
-                <MessageSquare className="h-4 w-4" />
-              </span>
-              <span>{comments.length}</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-0.5">
-            {/* Share / copy link */}
-            <button
-              type="button"
-              onClick={handleShare}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                copied
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              title="Copy link"
-            >
-              {copied ? (
-                <LinkIcon className="h-4 w-4" />
-              ) : (
-                <Share2 className="h-4 w-4" />
-              )}
-              {copied && <span className="text-xs">Copied!</span>}
-            </button>
-
-            {/* Save */}
-            <button
-              type="button"
-              onClick={handleSave}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300 ${
-                isSaved
-                  ? "bg-primary/10 text-primary scale-105 shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              title={isSaved ? "Remove from saved" : "Save for later"}
-            >
-              <Bookmark
-                className={`h-4.5 w-4.5 transition-transform duration-300 ${isSaved ? "fill-current" : ""}`}
-              />
-              <span className="text-xs font-bold">{isSaved ? "Saved" : "Save"}</span>
-            </button>
-          </div>
-        </div>
+        {/* Unified Action Bar */}
+        {story && (
+          <PostActions
+            postId={story.postId || story._id}
+            totalLikes={story.totalLikes}
+            totalDislikes={story.totalDislikes}
+            totalComments={story.totalComments}
+            isLiked={story.isLiked}
+            isDisliked={story.isDisliked}
+            isBookmarked={story.isBookmarked}
+            likesCount={story.likesCount}
+            dislikesCount={story.dislikesCount}
+            commentsCount={story.commentsCount ?? comments?.length}
+            initialInteraction={story.userInteraction ?? story.userVoteStatus}
+            initialIsSaved={story.isSaved}
+            onCommentClick={handleCommentClick}
+            showBorder={true}
+          />
+        )}
       </article>
 
       {/* ── Comments Section ────────────────────────────────────────────────── */}
@@ -466,13 +330,13 @@ const StoryDetail = () => {
         </div>
 
         {/* Comment list */}
-        {comments.length === 0 ? (
+        {(!comments || comments.length === 0) ? (
           <p className="text-sm text-muted-foreground text-center py-6">
             No comments yet. Be the first!
           </p>
         ) : (
           <div className="space-y-4">
-            {comments.map((c) => {
+            {(comments || []).map((c) => {
               const name = c.isAnonymous
                 ? "Anonymous"
                 : c.user?.name || c.user?.username || "User";

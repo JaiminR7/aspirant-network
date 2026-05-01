@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { getExamEnum } = require('../constants/exams');
-const { ALLOWED_COMMENT_TEXTS, toAllowedCommentText } = require('../constants/allowedComments');
+const { ALL_ALLOWED_COMMENT_TEXTS, toAllowedCommentText } = require('../constants/allowedComments');
 
 const resourceSchema = new mongoose.Schema({
   // Resource Title
@@ -186,7 +186,7 @@ const resourceSchema = new mongoose.Schema({
       trim: true,
       maxlength: [500, 'Comment cannot exceed 500 characters'],
       enum: {
-        values: ALLOWED_COMMENT_TEXTS,
+        values: ALL_ALLOWED_COMMENT_TEXTS,
         message: 'Comment text must be from the approved whitelist'
       }
     },

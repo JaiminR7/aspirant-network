@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Rocket } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Button } from '../ui/button';
-import { useTheme } from '../../context/ThemeContext';
-import { Sun, Moon } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu, X, Rocket } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Button } from "../ui/button";
+import { useTheme } from "../../context/ThemeContext";
+import { Sun, Moon } from "lucide-react";
+import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -15,20 +16,22 @@ const Navbar = () => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
     };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   const navLinks = [
-    { name: 'Features', href: '#features' },
-    { name: 'Circles', href: '#circles' },
-    { name: 'Community', href: '#community' },
+    { name: "Features", href: "#features" },
+    { name: "Circles", href: "#circles" },
+    { name: "Community", href: "#community" },
   ];
 
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled ? 'bg-background/80 backdrop-blur-md border-b border-border py-3' : 'bg-transparent py-5'
+        isScrolled
+          ? "bg-background/80 backdrop-blur-md border-b border-border py-3"
+          : "bg-transparent py-5"
       }`}
     >
       <div className="container mx-auto px-6 flex items-center justify-between">
@@ -36,7 +39,9 @@ const Navbar = () => {
           <div className="bg-primary p-1.5 rounded-lg text-primary-foreground group-hover:rotate-12 transition-transform">
             <Rocket size={20} />
           </div>
-          <span className="text-xl font-bold tracking-tight">Aspirant Network</span>
+          <span className="text-xl font-bold tracking-tight">
+            Aspirant Network
+          </span>
         </Link>
 
         {/* Desktop Links */}
@@ -60,18 +65,30 @@ const Navbar = () => {
             onClick={toggleTheme}
             className="rounded-full"
           >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
           </Button>
-          <Link to="/login">
-            <Button variant="ghost" className="rounded-2xl">Login</Button>
-          </Link>
-          <Link to="/signup">
-            <Button className="rounded-2xl px-6 shadow-lg shadow-primary/20">Get Started</Button>
-          </Link>
+          <SignedOut>
+            <Link to="/sign-in">
+              <Button variant="ghost" className="rounded-2xl">
+                Sign In
+              </Button>
+            </Link>
+            <Link to="/sign-up">
+              <Button className="rounded-2xl px-6 shadow-lg shadow-primary/20">
+                Get Started
+              </Button>
+            </Link>
+          </SignedOut>
+          <SignedIn>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
         </div>
 
         {/* Mobile Menu Button */}
-        <button className="md:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <button
+          className="md:hidden"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
           {mobileMenuOpen ? <X /> : <Menu />}
         </button>
       </div>
@@ -103,7 +120,7 @@ const Navbar = () => {
                   onClick={toggleTheme}
                   className="w-full rounded-2xl flex items-center justify-center gap-2"
                 >
-                  {theme === 'light' ? (
+                  {theme === "light" ? (
                     <>
                       <Moon size={18} />
                       <span>Dark Mode</span>
@@ -115,12 +132,21 @@ const Navbar = () => {
                     </>
                   )}
                 </Button>
-                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="outline" className="w-full rounded-2xl">Login</Button>
-                </Link>
-                <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
-                  <Button className="w-full rounded-2xl">Get Started</Button>
-                </Link>
+                <SignedOut>
+                  <Link to="/sign-in" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="outline" className="w-full rounded-2xl">
+                      Sign In
+                    </Button>
+                  </Link>
+                  <Link to="/sign-up" onClick={() => setMobileMenuOpen(false)}>
+                    <Button className="w-full rounded-2xl">Get Started</Button>
+                  </Link>
+                </SignedOut>
+                <SignedIn>
+                  <div className="flex justify-center py-2">
+                    <UserButton afterSignOutUrl="/" />
+                  </div>
+                </SignedIn>
               </div>
             </div>
           </motion.div>

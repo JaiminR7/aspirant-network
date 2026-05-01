@@ -5,34 +5,49 @@ import Signup from "../pages/Signup";
 import Landing from "../pages/Landing";
 import ForgotPassword from "../pages/ForgotPassword";
 import AppLayout from "../layouts/AppLayout";
+import { SignedIn, SignedOut, RedirectToSignIn, useAuth as useClerkAuth } from "@clerk/clerk-react";
+import SignInPage from "../pages/auth/SignInPage";
+import SignUpPage from "../pages/auth/SignUpPage";
+import Onboarding from "../pages/Onboarding";
 
 // Protected Route wrapper - redirects to login if not authenticated
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
-
-  if (loading) {
+  const { user, loading, isAuthenticated } = useAuth();
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  
+  if (loading || !isLoaded) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
+          <p className="mt-4 text-muted-foreground">Loading Profile...</p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated()) {
-    return <Navigate to="/" replace />;
+  // STRICT CHECK: Must be signed in to Clerk AND have a valid MongoDB user
+  if (!isSignedIn || !user) {
+    return <RedirectToSignIn />;
   }
 
-  return children;
+  return (
+    <>
+      {user && !user.onboarded && window.location.pathname !== "/onboarding" ? (
+        <Navigate to="/onboarding" replace />
+      ) : (
+        children
+      )}
+    </>
+  );
 };
 
 // Public Route wrapper - redirects to home if already authenticated
 const PublicRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  const { user } = useAuth();
 
-  if (loading) {
+  if (!isLoaded) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -43,7 +58,10 @@ const PublicRoute = ({ children }) => {
     );
   }
 
-  if (isAuthenticated()) {
+  if (isSignedIn) {
+    if (user && !user.onboarded) {
+      return <Navigate to="/onboarding" replace />;
+    }
     return <Navigate to="/home" replace />;
   }
 
@@ -51,17 +69,22 @@ const PublicRoute = ({ children }) => {
 };
 
 const AppRouter = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  const { user, loading: authLoading } = useAuth();
 
   return (
     <BrowserRouter>
       <Routes>
-        {/* Landing Page - Accessible to everyone, but redirects to /home if logged in and at root exactly */}
+        {/* Landing Page - Accessible to everyone, but redirects if logged in */}
         <Route
           path="/"
           element={
-            !loading && isAuthenticated() ? (
-              <Navigate to="/home" replace />
+            isLoaded && isSignedIn ? (
+              user && !user.onboarded ? (
+                <Navigate to="/onboarding" replace />
+              ) : (
+                <Navigate to="/home" replace />
+              )
             ) : (
               <Landing />
             )
@@ -91,6 +114,16 @@ const AppRouter = () => {
             <PublicRoute>
               <ForgotPassword />
             </PublicRoute>
+          }
+        />
+        <Route path="/sign-in/*" element={<SignInPage />} />
+        <Route path="/sign-up/*" element={<SignUpPage />} />
+        <Route
+          path="/onboarding"
+          element={
+            <ProtectedRoute>
+              <Onboarding />
+            </ProtectedRoute>
           }
         />
         {/* Protected Routes - redirect to / if not authenticated */}

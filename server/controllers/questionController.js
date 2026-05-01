@@ -1,8 +1,11 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Question = require('../models/Question');
 const Post = require('../models/Post');
 const SavedItem = require('../models/SavedItem');
+const Interaction = require('../models/Interaction');
 const { createActivity } = require('./activityController');
+const { applyInteractionContract, normalizeInteractionType } = require('../utils/interactionContract');
 
 const createQuestion = async (req, res) => {
   try {
@@ -190,14 +193,16 @@ const getAllQuestions = async (req, res) => {
     }
 
     // Clean response: add counts and remove arrays
-    const cleanedQuestions = processedQuestions.map(q => ({
+    const cleanedQuestions = processedQuestions.map(q => applyInteractionContract({
       ...q,
-      likesCount: q.upvotes?.length || 0,
-      dislikesCount: q.downvotes?.length || 0,
-      commentsCount: q.answerCount || 0,
-      isSaved: savedIds.has(q._id.toString()),
       upvotes: undefined,
       downvotes: undefined
+    }, {
+      totalLikes: q.upvotes?.length || 0,
+      totalDislikes: q.downvotes?.length || 0,
+      totalComments: q.answerCount || 0,
+      interaction: 'none',
+      isBookmarked: savedIds.has(q._id.toString())
     }));
     
     res.json({ 
@@ -217,6 +222,11 @@ const getAllQuestions = async (req, res) => {
 
 const getQuestionById = async (req, res) => {
   try {
+    // Guard: reject malformed IDs early to avoid CastError → 500
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid question ID' });
+    }
+
     const question = await Question.findOne(
       { _id: req.params.id, exam: req.examContext }
     ).populate('subject topic createdBy').lean();
@@ -227,30 +237,40 @@ const getQuestionById = async (req, res) => {
     
     // Add counts and determine user vote status
     const userId = req.userId?.toString();
-    // Check for saved status
+    // Check for saved status and get hub postId
     let isSaved = false;
-    if (req.userId) {
-      const post = await Post.findOne({ sourceId: question._id, sourceModel: 'Question' }).select('_id');
-      if (post) {
-        const saved = await SavedItem.findOne({ userId: req.userId, postId: post._id }).select('_id');
+    let userInteraction = 'none';
+    let likesCount = question.upvotes?.length || 0;
+    let dislikesCount = question.downvotes?.length || 0;
+    let postId = null;
+
+    const postHub = await Post.findOne({ sourceId: question._id, sourceModel: 'Question' }).select('_id likesCount dislikesCount');
+
+    if (postHub) {
+      postId = postHub._id;
+      likesCount = postHub.likesCount || 0;
+      dislikesCount = postHub.dislikesCount || 0;
+
+      if (req.userId) {
+        const [saved, interaction] = await Promise.all([
+          SavedItem.findOne({ userId: req.userId, postId: postHub._id }).select('_id'),
+          Interaction.findOne({ userId: req.userId, postId: postHub._id }).select('type')
+        ]);
         isSaved = !!saved;
+        userInteraction = normalizeInteractionType(interaction?.type || 'none');
       }
     }
 
-    const cleanQuestion = {
+    const cleanQuestion = applyInteractionContract({
       ...question,
-      likesCount: question.upvotes?.length || 0,
-      dislikesCount: question.downvotes?.length || 0,
-      commentsCount: question.answerCount || 0,
-      isSaved,
-      userVoteStatus: question.upvotes?.some(id => id.toString() === userId) 
-        ? 'upvoted'
-        : question.downvotes?.some(id => id.toString() === userId)
-        ? 'downvoted'
-        : 'none',
-      upvotes: undefined,
-      downvotes: undefined
-    };
+      postId, // Hub ID
+    }, {
+      totalLikes: likesCount,
+      totalDislikes: dislikesCount,
+      totalComments: question.answerCount || 0,
+      interaction: userInteraction,
+      isBookmarked: isSaved
+    });
     
     res.json({ success: true, data: cleanQuestion });
   } catch (error) {
@@ -363,14 +383,15 @@ const upvoteQuestion = async (req, res) => {
         ? 'downvoted' 
         : 'none';
 
-    res.json({ 
-      success: true, 
-      data: { 
-        likesCount: updatedQuestion.upvotes.length,
-        dislikesCount: updatedQuestion.downvotes.length,
-        commentsCount: updatedQuestion.answerCount || 0,
-        userVoteStatus 
-      } 
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: updatedQuestion.upvotes.length,
+        totalDislikes: updatedQuestion.downvotes.length,
+        totalComments: updatedQuestion.answerCount || 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -412,14 +433,15 @@ const downvoteQuestion = async (req, res) => {
         ? 'downvoted' 
         : 'none';
 
-    res.json({ 
-      success: true, 
-      data: { 
-        likesCount: updatedQuestion.upvotes.length,
-        dislikesCount: updatedQuestion.downvotes.length,
-        commentsCount: updatedQuestion.answerCount || 0,
-        userVoteStatus 
-      } 
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: updatedQuestion.upvotes.length,
+        totalDislikes: updatedQuestion.downvotes.length,
+        totalComments: updatedQuestion.answerCount || 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

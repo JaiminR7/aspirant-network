@@ -37,7 +37,6 @@ import {
   LogOut,
 } from "lucide-react";
 
-
 const GOAL_VISIBILITY = [
   { value: "Public", label: "Public", description: "Visible to everyone" },
   {
@@ -70,7 +69,7 @@ const Settings = () => {
 
   // Delete account state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -155,8 +154,8 @@ const Settings = () => {
   };
 
   const handleDeleteAccount = async () => {
-    if (!deletePassword) {
-      setDeleteError("Password is required");
+    if (deleteConfirmation !== "CONFIRM") {
+      setDeleteError("Please type 'CONFIRM' to delete your account");
       return;
     }
 
@@ -164,23 +163,46 @@ const Settings = () => {
     setDeleteError("");
 
     try {
-      await userService.deleteAccount(deletePassword);
+      const response = await userService.deleteAccount();
+
+      if (!response.success) {
+        throw new Error(response.message || "Failed to delete account");
+      }
 
       addToast({
         title: "Account deleted",
-        description: "Your account has been permanently deleted.",
+        description:
+          "Your account and all associated data have been permanently deleted.",
         variant: "success",
         duration: 3000,
       });
 
-      // Logout and redirect to home
-      setTimeout(() => {
-        logout();
+      // Close dialog and clear form
+      setShowDeleteDialog(false);
+      setDeleteConfirmation("");
+
+      // Logout and redirect to landing page
+      setTimeout(async () => {
+        // Clear any remaining cached data
+        localStorage.removeItem("adminAccess");
+        localStorage.removeItem("examContext");
+
+        await logout();
         navigate("/");
       }, 1500);
     } catch (error) {
       console.error("Error deleting account:", error);
-      setDeleteError(error.message || "Failed to delete account");
+      const errorMsg =
+        error.message || "Failed to delete account. Please try again.";
+      setDeleteError(errorMsg);
+
+      // Also show error as toast for better visibility
+      addToast({
+        title: "Delete failed",
+        description: errorMsg,
+        variant: "destructive",
+        duration: 5000,
+      });
     } finally {
       setDeleteLoading(false);
     }
@@ -680,26 +702,30 @@ const Settings = () => {
                 </ul>
               </div>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="delete-password"
-                  className="text-sm font-medium text-foreground"
-                >
-                  Enter your password to confirm
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="delete-confirmation"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    Type{" "}
+                    <span className="font-bold text-destructive">CONFIRM</span>{" "}
+                    to permanently delete your account
+                  </Label>
                   <input
-                    id="delete-password"
-                    type="password"
-                    value={deletePassword}
+                    id="delete-confirmation"
+                    type="text"
+                    value={deleteConfirmation}
                     onChange={(e) => {
-                      setDeletePassword(e.target.value);
+                      setDeleteConfirmation(e.target.value);
                       setDeleteError("");
                     }}
-                    placeholder="Enter your password"
-                    className="w-full pl-10 pr-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-destructive border border-transparent transition-all"
+                    placeholder="Type CONFIRM"
+                    className="w-full px-4 py-3 bg-secondary rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-destructive border border-transparent transition-all"
                   />
+                  <p className="text-xs text-muted-foreground italic">
+                    This action is permanent and cannot be undone.
+                  </p>
                 </div>
                 {deleteError && (
                   <p className="text-sm text-destructive flex items-center gap-1">
@@ -714,7 +740,7 @@ const Settings = () => {
               <Button
                 onClick={() => {
                   setShowDeleteDialog(false);
-                  setDeletePassword("");
+                  setDeleteConfirmation("");
                   setDeleteError("");
                 }}
                 variant="outline"
@@ -725,7 +751,7 @@ const Settings = () => {
               </Button>
               <Button
                 onClick={handleDeleteAccount}
-                disabled={deleteLoading || !deletePassword}
+                disabled={deleteLoading || deleteConfirmation !== "CONFIRM"}
                 className="flex-1 rounded-xl bg-destructive hover:bg-destructive/90 text-white"
               >
                 {deleteLoading ? (

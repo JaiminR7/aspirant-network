@@ -37,6 +37,8 @@ const Home = () => {
     setError("");
 
     try {
+      if (!user) return;
+      
       const response = await postsService.getFeed({ 
         limit: 24,
         scope,

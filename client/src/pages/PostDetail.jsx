@@ -12,6 +12,7 @@ import { postsService } from "../services/postsService";
 import { resourceService } from "../services/resourceService";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ui/toast";
+import { normalizeInteractionContract, toLegacyInteractionFields } from "../utils/interactionContract";
 
 const MAX_COMMENT_LENGTH = 300;
 
@@ -92,7 +93,10 @@ const PostDetail = () => {
       // Phase 1: Critical Post Data
       const apiStart = performance.now();
       const postResponse = await postsService.getPostById(id);
-      const fetchedPost = postResponse.data;
+      const fetchedPost = {
+        ...postResponse.data,
+        ...toLegacyInteractionFields(normalizeInteractionContract(postResponse.data)),
+      };
       
       if (isDev) {
         console.log(`[PERF] Post API time: ${(performance.now() - apiStart).toFixed(2)}ms`);
@@ -106,7 +110,7 @@ const PostDetail = () => {
       if (token && fetchedPost.sourceModel === "Resource") {
         try {
           const ratingData = await resourceService.getUserRating(fetchedPost.sourceId);
-          setUserRating(ratingData.data.rating || 0);
+          setUserRating(ratingData.data.userRating || 0);
         } catch (err) {
           console.warn("Failed to fetch user rating for post resource:", err);
         }
@@ -188,9 +192,11 @@ const PostDetail = () => {
       setCommentText("");
       setPost((prev) => {
         if (!prev) return prev;
+        const nextCount = response.data?.totalComments ?? response.data?.commentsCount ?? prev.commentsCount + 1;
         const updatedPost = {
           ...prev,
-          commentsCount: response.data?.commentsCount ?? prev.commentsCount + 1,
+          commentsCount: nextCount,
+          totalComments: nextCount
         };
         POST_CACHE.set(id, updatedPost);
         return updatedPost;
@@ -214,7 +220,7 @@ const PostDetail = () => {
 
     setRatingLoading(true);
     try {
-      const response = await resourceService.rate(post.sourceId, rating);
+      await resourceService.rate(post.sourceId, rating);
       setUserRating(rating);
       // We don't necessarily have a rating count in the post model itself 
       // as it might be a denormalized view, but we can update state if needed.
@@ -222,8 +228,12 @@ const PostDetail = () => {
       
       // Refresh post data to get updated aggregate if it exists
       const postResponse = await postsService.getPostById(id);
-      setPost(postResponse.data);
-      POST_CACHE.set(id, postResponse.data);
+      const normalizedPost = {
+        ...postResponse.data,
+        ...toLegacyInteractionFields(normalizeInteractionContract(postResponse.data)),
+      };
+      setPost(normalizedPost);
+      POST_CACHE.set(id, normalizedPost);
     } catch (error) {
       console.error("Error rating resource from post:", error);
       addToast({ title: "Error", description: "Failed to submit rating.", variant: "error" });
@@ -317,19 +327,31 @@ const PostDetail = () => {
 
         <PostActions
           postId={post._id}
-          initialLikes={post.likesCount || 0}
-          initialDislikes={post.dislikesCount || 0}
-          initialComments={actionBarCount}
-          initialInteraction={post.userInteraction || "none"}
+          totalLikes={post.totalLikes}
+          totalDislikes={post.totalDislikes}
+          totalComments={post.totalComments}
+          isLiked={post.isLiked}
+          isDisliked={post.isDisliked}
+          isBookmarked={post.isBookmarked}
+          likesCount={post.likesCount}
+          dislikesCount={post.dislikesCount}
+          commentsCount={actionBarCount}
+          initialInteraction={post.userInteraction}
           onCommentClick={() => {
             document.getElementById("post-comment-input")?.focus();
           }}
           onCountsChange={(next) => {
             setPost((prev) => {
+              if (!prev) return prev;
               const updated = {
                 ...prev,
-                likesCount: next.likesCount,
-                dislikesCount: next.dislikesCount,
+                ...toLegacyInteractionFields(next),
+                totalLikes: next.totalLikes,
+                totalDislikes: next.totalDislikes,
+                totalComments: next.totalComments ?? prev.totalComments ?? prev.commentsCount ?? 0,
+                isLiked: next.isLiked,
+                isDisliked: next.isDisliked,
+                isBookmarked: next.isBookmarked
               };
               POST_CACHE.set(id, updated);
               return updated;

@@ -62,12 +62,11 @@ export const userService = {
   },
 
   /**
-   * Delete/deactivate account
-   * @param {string} password - User's password for confirmation
+   * Delete/deactivate account permanently
    * @returns {Promise}
    */
-  deleteAccount: async (password) => {
-    const response = await api.delete('/users/me', { data: { password } });
+  deleteAccount: async () => {
+    const response = await api.delete('/users/me');
     return response.data;
   },
 

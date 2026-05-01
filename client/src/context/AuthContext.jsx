@@ -1,4 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
+import { useUser, useAuth as useClerkAuth } from "@clerk/clerk-react";
+import { authService } from "../services/authService";
 
 const AuthContext = createContext(null);
 
@@ -6,30 +8,49 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  const { isLoaded, isSignedIn, user: clerkUser } = useUser();
+  const { getToken } = useClerkAuth();
 
-  // Initialize auth state from localStorage on mount
+  // Initialize auth state from Clerk
   useEffect(() => {
-    const initializeAuth = () => {
-      try {
-        const storedToken = localStorage.getItem("token");
-        const storedUser = localStorage.getItem("user");
+    const initializeAuth = async () => {
+      if (!isLoaded) return;
 
-        if (storedToken && storedUser) {
-          setToken(storedToken);
-          setUser(JSON.parse(storedUser));
+      if (isSignedIn && clerkUser) {
+        try {
+          const authToken = await getToken();
+          setToken(authToken);
+          localStorage.setItem("token", authToken);
+
+          // Sync with backend
+          const response = await authService.syncClerkUser({
+            clerkId: clerkUser.id,
+            email: clerkUser.emailAddresses[0].emailAddress,
+            name: clerkUser.fullName,
+            profilePicture: clerkUser.imageUrl
+          });
+
+          if (response.success) {
+            setUser(response.data);
+            localStorage.setItem("user", JSON.stringify(response.data));
+          }
+        } catch (error) {
+          console.error("Error initializing auth:", error);
+        } finally {
+          setLoading(false);
         }
-      } catch (error) {
-        console.error("Error initializing auth:", error);
-        // Clear corrupted data
+      } else {
+        setUser(null);
+        setToken(null);
         localStorage.removeItem("token");
         localStorage.removeItem("user");
-      } finally {
         setLoading(false);
       }
     };
 
     initializeAuth();
-  }, []);
+  }, [isLoaded, isSignedIn, clerkUser, getToken]);
 
   // Login function - stores user and token
   const login = (userData, authToken) => {
@@ -44,12 +65,27 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const { signOut } = useClerkAuth();
+
   // Logout function - clears all auth data
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+  const logout = async () => {
+    try {
+      // Clear local state immediately
+      setUser(null);
+      setToken(null);
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      
+      // Sign out from Clerk
+      await signOut();
+      
+      // Redirect to landing
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Error during logout:", error);
+      // Still redirect as fallback
+      window.location.href = "/";
+    }
   };
 
   // Update user data (e.g., after profile update)

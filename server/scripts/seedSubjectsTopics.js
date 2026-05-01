@@ -252,46 +252,12 @@ const examData = {
       }
     ]
   },
-  'HSC-12 boards': {
-    subjects: [
-      {
-        name: 'Physics',
-        slug: 'physics',
-        description: 'HSC Physics',
-        topics: [
-          { name: 'Mechanics', difficulty: 'Medium' },
-          { name: 'Electricity & Magnetism', difficulty: 'Medium' },
-          { name: 'Optics', difficulty: 'Medium' },
-        ]
-      },
-      {
-        name: 'Chemistry',
-        slug: 'chemistry',
-        description: 'HSC Chemistry',
-        topics: [
-          { name: 'Physical Chemistry', difficulty: 'Medium' },
-          { name: 'Organic Chemistry', difficulty: 'Medium' },
-          { name: 'Inorganic Chemistry', difficulty: 'Medium' },
-        ]
-      },
-      {
-        name: 'Mathematics',
-        slug: 'mathematics',
-        description: 'HSC Mathematics',
-        topics: [
-          { name: 'Algebra', difficulty: 'Medium' },
-          { name: 'Calculus', difficulty: 'Hard' },
-          { name: 'Probability', difficulty: 'Medium' },
-        ]
-      }
-    ]
-  },
-  'IBPS': {
+  'Bank Exams': {
     subjects: [
       {
         name: 'Reasoning Ability',
         slug: 'reasoning-ability',
-        description: 'IBPS Reasoning Ability',
+        description: 'Bank Exams Reasoning Ability',
         topics: [
           { name: 'Seating Arrangement', difficulty: 'Medium' },
           { name: 'Puzzles', difficulty: 'Hard' },
@@ -302,7 +268,7 @@ const examData = {
       {
         name: 'Quantitative Aptitude',
         slug: 'quantitative-aptitude',
-        description: 'IBPS Quantitative Aptitude',
+        description: 'Bank Exams Quantitative Aptitude',
         topics: [
           { name: 'Data Interpretation', difficulty: 'Medium' },
           { name: 'Number Series', difficulty: 'Medium' },
@@ -312,118 +278,45 @@ const examData = {
       {
         name: 'English Language',
         slug: 'english-language',
-        description: 'IBPS English Language',
+        description: 'Bank Exams English Language',
         topics: [
           { name: 'Reading Comprehension', difficulty: 'Medium' },
           { name: 'Cloze Test', difficulty: 'Medium' },
           { name: 'Error Detection', difficulty: 'Easy' },
         ]
-      }
-    ]
-  },
-  'GMAT': {
-    subjects: [
-      {
-        name: 'Quantitative',
-        slug: 'quantitative',
-        description: 'GMAT Quantitative Section',
-        topics: [
-          { name: 'Problem Solving', difficulty: 'Medium' },
-          { name: 'Data Sufficiency', difficulty: 'Hard' },
-        ]
       },
       {
-        name: 'Verbal',
-        slug: 'verbal',
-        description: 'GMAT Verbal Section',
+        name: 'General Awareness',
+        slug: 'general-awareness',
+        description: 'Banking Awareness and Current Affairs',
         topics: [
-          { name: 'Reading Comprehension', difficulty: 'Medium' },
-          { name: 'Critical Reasoning', difficulty: 'Hard' },
-          { name: 'Sentence Correction', difficulty: 'Medium' },
-        ]
-      },
-      {
-        name: 'Integrated Reasoning',
-        slug: 'integrated-reasoning',
-        description: 'GMAT Integrated Reasoning Section',
-        topics: [
-          { name: 'Graphics Interpretation', difficulty: 'Medium' },
-          { name: 'Multi-Source Reasoning', difficulty: 'Hard' },
+          { name: 'Banking Terminology', difficulty: 'Medium' },
+          { name: 'Financial Awareness', difficulty: 'Hard' },
+          { name: 'Current Affairs', difficulty: 'Easy' },
         ]
       }
     ]
   },
-  'GRE': {
+  'Other': {
     subjects: [
       {
-        name: 'Verbal Reasoning',
-        slug: 'verbal-reasoning',
-        description: 'GRE Verbal Reasoning',
+        name: 'General Aptitude',
+        slug: 'general-aptitude',
+        description: 'General Aptitude for various exams',
         topics: [
-          { name: 'Text Completion', difficulty: 'Medium' },
-          { name: 'Reading Comprehension', difficulty: 'Medium' },
-          { name: 'Sentence Equivalence', difficulty: 'Easy' },
+          { name: 'Numerical Ability', difficulty: 'Medium' },
+          { name: 'Logical Reasoning', difficulty: 'Medium' },
+          { name: 'Verbal Ability', difficulty: 'Medium' },
         ]
       },
       {
-        name: 'Quantitative Reasoning',
-        slug: 'quantitative-reasoning',
-        description: 'GRE Quantitative Reasoning',
+        name: 'General Knowledge',
+        slug: 'general-knowledge',
+        description: 'Static GK and Current Events',
         topics: [
-          { name: 'Arithmetic', difficulty: 'Easy' },
-          { name: 'Algebra', difficulty: 'Medium' },
-          { name: 'Geometry', difficulty: 'Medium' },
-          { name: 'Data Analysis', difficulty: 'Medium' },
-        ]
-      },
-      {
-        name: 'Analytical Writing',
-        slug: 'analytical-writing',
-        description: 'GRE Analytical Writing',
-        topics: [
-          { name: 'Issue Essay', difficulty: 'Hard' },
-          { name: 'Argument Essay', difficulty: 'Hard' },
-        ]
-      }
-    ]
-  },
-  'IELTS': {
-    subjects: [
-      {
-        name: 'Listening',
-        slug: 'listening',
-        description: 'IELTS Listening Section',
-        topics: [
-          { name: 'Conversations', difficulty: 'Medium' },
-          { name: 'Monologues', difficulty: 'Medium' },
-        ]
-      },
-      {
-        name: 'Reading',
-        slug: 'reading',
-        description: 'IELTS Reading Section',
-        topics: [
-          { name: 'Academic Reading', difficulty: 'Medium' },
-          { name: 'Passage Analysis', difficulty: 'Medium' },
-        ]
-      },
-      {
-        name: 'Writing',
-        slug: 'writing',
-        description: 'IELTS Writing Section',
-        topics: [
-          { name: 'Task 1 - Graphs/Charts', difficulty: 'Medium' },
-          { name: 'Task 2 - Essay', difficulty: 'Hard' },
-        ]
-      },
-      {
-        name: 'Speaking',
-        slug: 'speaking',
-        description: 'IELTS Speaking Section',
-        topics: [
-          { name: 'Introduction', difficulty: 'Easy' },
-          { name: 'Cue Card', difficulty: 'Medium' },
-          { name: 'Discussion', difficulty: 'Hard' },
+          { name: 'History', difficulty: 'Medium' },
+          { name: 'Geography', difficulty: 'Medium' },
+          { name: 'Polity', difficulty: 'Medium' },
         ]
       }
     ]
@@ -453,12 +346,12 @@ async function seedDatabase() {
 
     // Iterate through each exam
     for (const [examName, data] of Object.entries(examData)) {
-      const normalizedExamName = examName === 'SSC' ? 'SSC-10 boards' : examName;
-      if (!allowedExams.has(normalizedExamName)) {
+      if (!allowedExams.has(examName)) {
+        console.log(`Skipping ${examName} (not in allowed exams list)`);
         continue;
       }
 
-      console.log(`\nSeeding ${normalizedExamName}...`);
+      console.log(`\nSeeding ${examName}...`);
 
       for (const subjectData of data.subjects) {
         // Create subject with slug already set
@@ -466,7 +359,7 @@ async function seedDatabase() {
           name: subjectData.name,
           slug: subjectData.slug,
           description: subjectData.description,
-          exam: normalizedExamName,
+          exam: examName,
           isActive: true
         });
         
@@ -479,7 +372,7 @@ async function seedDatabase() {
           const topic = new Topic({
             name: topicData.name,
             slug: generateSlug(topicData.name),
-            exam: normalizedExamName,
+            exam: examName,
             subject: subject._id,
             subjectName: subject.name,
             difficulty: topicData.difficulty || 'Medium',

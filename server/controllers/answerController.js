@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Answer = require('../models/Answer');
 const Question = require('../models/Question');
 const { createActivity } = require('./activityController');
+const { applyInteractionContract, normalizeInteractionType } = require('../utils/interactionContract');
 
 const createAnswer = async (req, res) => {
   try {
@@ -53,15 +55,84 @@ const createAnswer = async (req, res) => {
 
 const getAnswersByQuestion = async (req, res) => {
   try {
-    console.log('🔍 Getting answers for question:', req.params.questionId, 'exam:', req.examContext);
-    const answers = await Answer.find({ question: req.params.questionId, exam: req.examContext })
+    const { questionId } = req.params;
+
+    // Validate questionId to prevent CastError 500
+    if (!questionId || !mongoose.Types.ObjectId.isValid(questionId)) {
+      return res.status(400).json({ success: false, message: 'Invalid question ID' });
+    }
+
+    const answers = await Answer.find({ question: questionId, exam: req.examContext })
       .populate('author').sort({ isAccepted: -1, createdAt: -1 });
-    console.log('✅ Found answers:', answers.length);
-    res.json({ success: true, data: answers });
+    const userId = req.userId?.toString();
+    const payload = (answers || []).map((answerDoc) => {
+      const answer = answerDoc.toObject ? answerDoc.toObject() : answerDoc;
+      const interaction = userId
+        ? (answer.upvotedBy || []).some((id) => id.toString() === userId)
+          ? 'like'
+          : (answer.downvotedBy || []).some((id) => id.toString() === userId)
+            ? 'dislike'
+            : 'none'
+        : 'none';
+      return applyInteractionContract(answer, {
+        totalLikes: answer.upvotes || 0,
+        totalDislikes: answer.downvotes || 0,
+        totalComments: 0,
+        interaction,
+        isBookmarked: false
+      });
+    });
+    res.json({ success: true, data: payload });
   } catch (error) {
-    console.error('❌ Error fetching answers:', error.message);
-    console.error('Stack:', error.stack);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('[getAnswersByQuestion] Error:', error.message);
+    res.json({ success: true, data: [], _warning: error.message });
+  }
+};
+
+// Flat-route version: GET /api/answers/question/:questionId
+// Restores original API contract for answerService.getAnswersByQuestion()
+const getAnswersByQuestionDirect = async (req, res) => {
+  try {
+    const { questionId } = req.params;
+
+    // Validate questionId to avoid Mongoose CastError (which causes 500)
+    if (!questionId || !mongoose.Types.ObjectId.isValid(questionId)) {
+      return res.status(400).json({ success: false, message: 'Invalid question ID' });
+    }
+
+    // NOTE: Do NOT filter by exam here — answers may have been seeded under a
+    // different exam string than the user's current context. Scoping is done
+    // at the question level, not the answer level, for this flat route.
+    const answers = await Answer.find({ question: questionId })
+      .populate('author', 'name username profilePicture credibilityScore')
+      .sort({ isAccepted: -1, createdAt: -1 })
+      .lean();
+
+    // Attach userVoteStatus for the requesting user
+    const userId = req.userId?.toString();
+    const enriched = (answers || []).map(a => {
+      const userVoteStatus = userId
+        ? ((a.upvotedBy || []).some(id => id.toString() === userId) ? 'upvoted'
+          : (a.downvotedBy || []).some(id => id.toString() === userId) ? 'downvoted'
+          : 'none')
+        : 'none';
+
+      // Strip internal vote arrays from response to keep payload clean
+      const { upvotedBy, downvotedBy, ...rest } = a;
+      return applyInteractionContract({ ...rest }, {
+        totalLikes: rest.upvotes || 0,
+        totalDislikes: rest.downvotes || 0,
+        totalComments: 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      });
+    });
+
+    res.json({ success: true, data: enriched });
+  } catch (error) {
+    console.error('[answers/question] Error:', error.message);
+    // Return empty array instead of 500 — answers are secondary content
+    res.json({ success: true, data: [], _warning: 'Failed to fetch answers' });
   }
 };
 
@@ -85,9 +156,28 @@ const getAllAnswers = async (req, res) => {
         .limit(limitNum)
     ]);
 
+    const payload = (answers || []).map((answerDoc) => {
+      const answer = answerDoc.toObject ? answerDoc.toObject() : answerDoc;
+      const userId = req.userId?.toString();
+      const interaction = userId
+        ? (answer.upvotedBy || []).some((id) => id.toString() === userId)
+          ? 'like'
+          : (answer.downvotedBy || []).some((id) => id.toString() === userId)
+            ? 'dislike'
+            : 'none'
+        : 'none';
+      return applyInteractionContract(answer, {
+        totalLikes: answer.upvotes || 0,
+        totalDislikes: answer.downvotes || 0,
+        totalComments: 0,
+        interaction,
+        isBookmarked: false
+      });
+    });
+
     res.json({
       success: true,
-      data: answers,
+      data: payload,
       pagination: {
         total,
         page: pageNum,
@@ -188,11 +278,13 @@ const upvoteAnswer = async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        likesCount: updatedAnswer.upvotes,
-        dislikesCount: updatedAnswer.downvotes,
-        userVoteStatus
-      }
+      data: applyInteractionContract({}, {
+        totalLikes: updatedAnswer.upvotes,
+        totalDislikes: updatedAnswer.downvotes,
+        totalComments: 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -238,15 +330,17 @@ const downvoteAnswer = async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        likesCount: updatedAnswer.upvotes,
-        dislikesCount: updatedAnswer.downvotes,
-        userVoteStatus
-      }
+      data: applyInteractionContract({}, {
+        totalLikes: updatedAnswer.upvotes,
+        totalDislikes: updatedAnswer.downvotes,
+        totalComments: 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-module.exports = { createAnswer, getAnswersByQuestion, getAllAnswers, updateAnswer, deleteAnswer, markAccepted, upvoteAnswer, downvoteAnswer };
+module.exports = { createAnswer, getAnswersByQuestion, getAnswersByQuestionDirect, getAllAnswers, updateAnswer, deleteAnswer, markAccepted, upvoteAnswer, downvoteAnswer };

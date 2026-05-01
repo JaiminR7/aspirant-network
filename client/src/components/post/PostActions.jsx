@@ -1,15 +1,54 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { MessageSquare, ThumbsDown, ThumbsUp, Bookmark } from "lucide-react";
 import { postsService } from "../../services/postsService";
 import { useToast } from "../ui/toast";
+import { normalizeInteractionContract } from "../../utils/interactionContract";
+
+/**
+ * Normalize any mix of API response shapes into canonical interaction state.
+ * Uses ?? (null-coalescing) NOT || so that 0 is never treated as "missing".
+ */
+const resolveInitialState = (props) => {
+  const raw = {
+    totalLikes:     props.totalLikes     ?? props.likesCount      ?? props.initialLikes    ?? 0,
+    totalDislikes:  props.totalDislikes  ?? props.dislikesCount    ?? props.initialDislikes ?? 0,
+    totalComments:  props.totalComments  ?? props.commentsCount    ?? props.initialComments ?? 0,
+    likesCount:     props.likesCount     ?? props.totalLikes       ?? props.initialLikes    ?? 0,
+    dislikesCount:  props.dislikesCount  ?? props.totalDislikes    ?? props.initialDislikes ?? 0,
+    commentsCount:  props.commentsCount  ?? props.totalComments    ?? props.initialComments ?? 0,
+    isLiked:        props.isLiked,
+    isDisliked:     props.isDisliked,
+    isBookmarked:   props.isBookmarked   ?? props.initialIsSaved   ?? false,
+    isSaved:        props.isSaved        ?? props.initialIsSaved   ?? false,
+    userInteraction: props.initialInteraction ?? props.userInteraction ?? "none",
+    userVoteStatus:  props.userVoteStatus ?? props.initialInteraction ?? "none",
+  };
+
+  return normalizeInteractionContract(raw);
+};
 
 const PostActions = ({
   postId,
-  initialLikes = 0,
-  initialDislikes = 0,
-  initialComments = 0,
-  initialInteraction = "none",
-  initialIsSaved = false,
+  // Canonical fields (new contract)
+  totalLikes,
+  totalDislikes,
+  totalComments,
+  isLiked,
+  isDisliked,
+  isBookmarked,
+  // Legacy fields (backward compat — detail pages still send these)
+  likesCount,
+  dislikesCount,
+  commentsCount,
+  initialLikes,
+  initialDislikes,
+  initialComments,
+  initialInteraction,
+  initialIsSaved,
+  isSaved,
+  userInteraction,
+  userVoteStatus,
+  // UI config
   onCommentClick,
   onCountsChange,
   size = "md",
@@ -24,91 +63,121 @@ const PostActions = ({
   };
 
   const { icon: iconSize, text: textSize, gap } = sizeClasses[size];
-  const [likes, setLikes] = useState(initialLikes);
-  const [dislikes, setDislikes] = useState(initialDislikes);
-  const [commentsCount, setCommentsCount] = useState(initialComments);
-  const [interaction, setInteraction] = useState(initialInteraction);
-  const [isSaved, setIsSaved] = useState(initialIsSaved);
+
+  // Resolve ONCE from all prop variants → canonical state
+  const initial = resolveInitialState({
+    totalLikes, totalDislikes, totalComments,
+    likesCount, dislikesCount, commentsCount,
+    initialLikes, initialDislikes, initialComments,
+    isLiked, isDisliked, isBookmarked,
+    isSaved, initialIsSaved,
+    initialInteraction, userInteraction, userVoteStatus,
+  });
+
+  const [localLikes, setLocalLikes] = useState(initial.totalLikes);
+  const [localDislikes, setLocalDislikes] = useState(initial.totalDislikes);
+  const [localComments, setLocalComments] = useState(initial.totalComments);
+  const [interaction, setInteraction] = useState(
+    initial.isLiked ? "like" : initial.isDisliked ? "dislike" : "none"
+  );
+  const [localSaved, setLocalSaved] = useState(initial.isBookmarked);
   const [pending, setPending] = useState(false);
   const [savePending, setSavePending] = useState(false);
 
+  // Guard: don't let useEffect overwrite optimistic state while toggle is in-flight
+  const toggleInFlight = useRef(false);
+
+  // Re-sync from props when parent provides genuinely new data
   useEffect(() => {
-    setLikes(initialLikes);
-    setDislikes(initialDislikes);
-    setCommentsCount(initialComments);
-    setInteraction(initialInteraction);
-    setIsSaved(initialIsSaved);
-  }, [initialLikes, initialDislikes, initialComments, initialInteraction, initialIsSaved]);
+    if (toggleInFlight.current) return;
 
-  const applyOptimistic = (type) => {
-    const prev = { likes, dislikes, interaction };
+    const next = resolveInitialState({
+      totalLikes, totalDislikes, totalComments,
+      likesCount, dislikesCount, commentsCount,
+      initialLikes, initialDislikes, initialComments,
+      isLiked, isDisliked, isBookmarked,
+      isSaved, initialIsSaved,
+      initialInteraction, userInteraction, userVoteStatus,
+    });
 
-    let nextLikes = likes;
-    let nextDislikes = dislikes;
+    setLocalLikes(next.totalLikes);
+    setLocalDislikes(next.totalDislikes);
+    setLocalComments(next.totalComments);
+    setInteraction(next.isLiked ? "like" : next.isDisliked ? "dislike" : "none");
+    setLocalSaved(next.isBookmarked);
+  }, [
+    totalLikes, totalDislikes, totalComments,
+    likesCount, dislikesCount, commentsCount,
+    initialLikes, initialDislikes, initialComments,
+    isLiked, isDisliked, isBookmarked,
+    isSaved, initialIsSaved,
+    initialInteraction, userInteraction, userVoteStatus,
+  ]);
+
+  const toggle = async (type) => {
+    if (pending) return;
+
+    // Snapshot CURRENT visible state for rollback
+    const prev = { likes: localLikes, dislikes: localDislikes, interaction };
+
+    // Optimistic: apply delta to CURRENT visible counts (not props)
+    let nextLikes = localLikes;
+    let nextDislikes = localDislikes;
     let nextInteraction = interaction;
 
     if (type === "like") {
       if (interaction === "like") {
         nextLikes -= 1;
         nextInteraction = "none";
-      } else if (interaction === "dislike") {
-        nextDislikes -= 1;
-        nextLikes += 1;
-        nextInteraction = "like";
       } else {
+        if (interaction === "dislike") nextDislikes -= 1;
         nextLikes += 1;
         nextInteraction = "like";
       }
-    }
-
-    if (type === "dislike") {
+    } else {
       if (interaction === "dislike") {
         nextDislikes -= 1;
         nextInteraction = "none";
-      } else if (interaction === "like") {
-        nextLikes -= 1;
-        nextDislikes += 1;
-        nextInteraction = "dislike";
       } else {
+        if (interaction === "like") nextLikes -= 1;
         nextDislikes += 1;
         nextInteraction = "dislike";
       }
     }
 
-    setLikes(Math.max(0, nextLikes));
-    setDislikes(Math.max(0, nextDislikes));
+    setLocalLikes(Math.max(0, nextLikes));
+    setLocalDislikes(Math.max(0, nextDislikes));
     setInteraction(nextInteraction);
-
-    return prev;
-  };
-
-  const toggle = async (type) => {
-    if (pending) return;
-
-    const prev = applyOptimistic(type);
     setPending(true);
+    toggleInFlight.current = true;
 
     try {
       const response = await postsService.toggleInteraction(postId, type);
       console.debug("[interaction] response", response);
 
-      setLikes(response.data.likesCount);
-      setDislikes(response.data.dislikesCount);
-      setInteraction(response.data.userInteraction);
+      // Replace with server truth — this is the authoritative count
+      const truth = normalizeInteractionContract(response.data || {});
+      setLocalLikes(truth.totalLikes);
+      setLocalDislikes(truth.totalDislikes);
+      setInteraction(truth.isLiked ? "like" : truth.isDisliked ? "dislike" : "none");
+      setLocalSaved(truth.isBookmarked);
 
       if (onCountsChange) {
         onCountsChange({
-          likesCount: response.data.likesCount,
-          dislikesCount: response.data.dislikesCount,
-          commentsCount,
+          ...truth,
+          likesCount: truth.totalLikes,
+          dislikesCount: truth.totalDislikes,
+          commentsCount: localComments,
         });
       }
     } catch (error) {
-      setLikes(prev.likes);
-      setDislikes(prev.dislikes);
+      // Rollback to pre-click state
+      setLocalLikes(prev.likes);
+      setLocalDislikes(prev.dislikes);
       setInteraction(prev.interaction);
     } finally {
       setPending(false);
+      toggleInFlight.current = false;
     }
   };
   
@@ -116,8 +185,8 @@ const PostActions = ({
     e.stopPropagation();
     if (savePending) return;
 
-    const previousState = isSaved;
-    setIsSaved(!previousState);
+    const previousState = localSaved;
+    setLocalSaved(!previousState);
     setSavePending(true);
 
     try {
@@ -137,7 +206,7 @@ const PostActions = ({
         });
       }
     } catch (error) {
-      setIsSaved(previousState);
+      setLocalSaved(previousState);
       addToast({
         title: "Action failed",
         description: "Could not update save status. Please try again.",
@@ -149,57 +218,73 @@ const PostActions = ({
   };
 
   return (
-    <div className={`flex items-center ${gap} ${textSize} text-muted-foreground pt-2 ${showBorder ? "border-t border-border" : ""}`}>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          toggle("like");
-        }}
-        className={`inline-flex items-center gap-2 ${interaction === "like" ? "text-sky-700 font-semibold" : ""}`}
-      >
-        <ThumbsUp className={iconSize} />
-        {likes}
-      </button>
+    <div className={`flex items-center justify-between ${textSize} text-muted-foreground pt-3 ${showBorder ? "border-t border-border" : ""}`}>
+      <div className={`flex items-center ${gap}`}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle("like");
+          }}
+          className={`flex items-center gap-1.5 transition-colors group ${
+            interaction === "like" ? "text-sky-600 font-semibold" : "hover:text-sky-600"
+          }`}
+        >
+          <ThumbsUp 
+            className={`${iconSize} transition-transform group-hover:scale-110 ${
+              interaction === "like" ? "fill-sky-600/10" : ""
+            }`} 
+          />
+          <span>{localLikes}</span>
+        </button>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          toggle("dislike");
-        }}
-        className={`inline-flex items-center gap-2 ${interaction === "dislike" ? "text-red-700 font-semibold" : ""}`}
-      >
-        <ThumbsDown className={iconSize} />
-        {dislikes}
-      </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle("dislike");
+          }}
+          className={`flex items-center gap-1.5 transition-colors group ${
+            interaction === "dislike" ? "text-red-600 font-semibold" : "hover:text-red-600"
+          }`}
+        >
+          <ThumbsDown 
+            className={`${iconSize} transition-transform group-hover:scale-110 ${
+              interaction === "dislike" ? "fill-red-600/10" : ""
+            }`} 
+          />
+          <span>{localDislikes}</span>
+        </button>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onCommentClick?.();
-        }}
-        className="inline-flex items-center gap-2"
-      >
-        <MessageSquare className={iconSize} />
-        {commentsCount}
-      </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCommentClick?.();
+          }}
+          className="flex items-center gap-1.5 transition-colors group hover:text-emerald-600"
+        >
+          <MessageSquare className={`${iconSize} transition-transform group-hover:scale-110`} />
+          <span>{localComments}</span>
+        </button>
+      </div>
 
-      <button
-        type="button"
-        onClick={handleSave}
-        className={`ml-auto p-1.5 rounded-lg transition-all duration-300 ${
-          isSaved 
-            ? "text-primary bg-primary/10 hover:bg-primary/20 scale-110" 
-            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-        }`}
-        aria-label={isSaved ? "Remove from saved" : "Save for later"}
-      >
-        <Bookmark 
-          className={`${iconSize} transition-transform duration-300 ${isSaved ? "fill-current" : ""}`} 
-        />
-      </button>
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={handleSave}
+          className={`p-1.5 rounded-md transition-all duration-300 ${
+            localSaved 
+              ? "text-primary bg-primary/5 scale-105" 
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+          aria-label={localSaved ? "Remove from saved" : "Save for later"}
+        >
+          <Bookmark 
+            className={`${iconSize} transition-transform duration-300 ${localSaved ? "fill-current" : ""}`} 
+          />
+        </button>
+      </div>
     </div>
   );
 };

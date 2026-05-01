@@ -9,8 +9,14 @@ const PostCard = ({ post }) => {
   const navigate = useNavigate();
 
   const handleOpenPost = () => {
-    console.debug("[post] open detail", post._id);
-    navigate(`/post/${post._id}`);
+    console.debug("[post] open detail", post._id, post.type);
+    
+    // Redirect questions to their specialized detail page to show answers
+    if (post.type === "question" && post.sourceId) {
+      navigate(`/question/${post.sourceId}`);
+    } else {
+      navigate(`/post/${post._id}`);
+    }
   };
 
   const author = post.author || post.userId;
@@ -48,10 +54,16 @@ const PostCard = ({ post }) => {
       <div onClick={(e) => e.stopPropagation()}>
         <PostActions
           postId={post._id}
-          initialLikes={post.likesCount || 0}
-          initialDislikes={post.dislikesCount || 0}
-          initialComments={post.commentsCount || 0}
-          initialInteraction={post.userInteraction || "none"}
+          totalLikes={post.totalLikes}
+          totalDislikes={post.totalDislikes}
+          totalComments={post.totalComments}
+          isLiked={post.isLiked}
+          isDisliked={post.isDisliked}
+          isBookmarked={post.isBookmarked}
+          likesCount={post.likesCount}
+          dislikesCount={post.dislikesCount}
+          commentsCount={post.commentsCount}
+          initialInteraction={post.userInteraction}
           initialIsSaved={post.isSaved}
           onCommentClick={handleOpenPost}
         />

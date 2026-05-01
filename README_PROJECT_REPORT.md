@@ -359,7 +359,7 @@ Typical required keys:
 
 - Some high-level architecture docs mention broader conceptual features; actual route/module implementation is the source of truth.
 - Exam-scoping is heavily present, but there are spots where profile-owner filters skip exam query filters for compatibility reasons.
-- Admin flow currently includes demo unlock behavior on frontend and middleware bypass support for demo scenarios.
+- Admin flow currently includes demo unlock behavior on frontend and middleware bypass support for demo scena rios.
 
 ## 14. Suggested Report Chapters (For Submission)
 

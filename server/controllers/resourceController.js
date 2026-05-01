@@ -4,7 +4,9 @@ const Post = require('../models/Post');
 const User = require('../models/User');
 const SavedItem = require('../models/SavedItem');
 const ResourceRating = require('../models/ResourceRating');
+const Interaction = require('../models/Interaction');
 const { cloudinary } = require('../middleware/upload');
+const { applyInteractionContract, normalizeInteractionType } = require('../utils/interactionContract');
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -86,6 +88,50 @@ const withViewerContent = (resource) => {
       viewerUrl,
     },
   };
+};
+
+const toSafeResourcePayload = (resource = {}, overrides = {}) => {
+  const normalized = withViewerContent(resource);
+  const content = normalized?.content || {};
+  const comments = Array.isArray(normalized.comments) ? normalized.comments : [];
+  const inferredFileType = String(content.type || normalized.type || '').toLowerCase();
+
+  return applyInteractionContract({
+    ...normalized,
+    content: {
+      ...content,
+      url: content.url || '',
+      viewerUrl: content.viewerUrl || content.url || content.externalLink || '',
+      externalLink: content.externalLink || '',
+      type: content.type || inferContentType(normalized),
+      thumbnailUrl: content.thumbnailUrl || ''
+    },
+    fileUrl: content.url || content.externalLink || '',
+    fileType: inferredFileType || 'file',
+    thumbnail: content.thumbnailUrl || '',
+    interaction: overrides.userInteraction || 'none',
+    comments,
+    commentCount: Number.isFinite(normalized.commentCount) ? normalized.commentCount : comments.length,
+    commentsCount: Number.isFinite(normalized.commentCount) ? normalized.commentCount : comments.length,
+    tags: [
+      ...(Array.isArray(normalized.systemTags) ? normalized.systemTags : []),
+      ...(Array.isArray(normalized.userTags) ? normalized.userTags : [])
+    ],
+    metadata: {
+      fileName: content.fileName || '',
+      fileSize: content.fileSize || 0,
+      mimeType: content.mimeType || ''
+    },
+    ...overrides
+  }, {
+    totalLikes: overrides.likesCount ?? normalized.upvotes?.length ?? 0,
+    totalDislikes: overrides.dislikesCount ?? normalized.downvotes?.length ?? 0,
+    totalComments:
+      overrides.commentsCount ??
+      (Number.isFinite(normalized.commentCount) ? normalized.commentCount : comments.length),
+    interaction: overrides.userInteraction || normalized.userInteraction || 'none',
+    isBookmarked: overrides.isSaved ?? normalized.isSaved ?? false
+  });
 };
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
@@ -230,16 +276,18 @@ const getAllResources = async (req, res) => {
       const resourceWithViewer = withViewerContent(r);
       // Debug ownership integrity while fetching resources
       console.log('RESOURCE USER:', r.user || r.createdBy || null);
-      return {
+      return applyInteractionContract({
         ...resourceWithViewer,
         user: r.user || r.createdBy || null,
-        likesCount: r.upvotes?.length || 0,
-        dislikesCount: r.downvotes?.length || 0,
-        commentsCount: r.commentCount || 0,
-        isSaved: savedIds.has(r._id.toString()),
         upvotes: undefined,
         downvotes: undefined
-      };
+      }, {
+        totalLikes: r.upvotes?.length || 0,
+        totalDislikes: r.downvotes?.length || 0,
+        totalComments: r.commentCount || 0,
+        interaction: 'none',
+        isBookmarked: savedIds.has(r._id.toString())
+      });
     });
 
     res.json({
@@ -262,43 +310,153 @@ const getResourceById = async (req, res) => {
 
     const resource = await Resource.findById(req.params.id)
       .populate('subject topic createdBy')
+      .populate({ path: 'comments.commentedBy', select: 'name username profilePicture' })
       .lean();
 
     if (!resource) return res.status(404).json({ success: false, message: 'Resource not found' });
     console.log('RESOURCE USER:', resource.user || resource.createdBy || null);
 
     const userId = req.userId?.toString();
-    // Check for saved status
+    // Check for saved status and get hub postId
     let isSaved = false;
-    if (req.userId) {
-      const post = await Post.findOne({ sourceId: resource._id, sourceModel: 'Resource' }).select('_id');
-      if (post) {
-        const saved = await SavedItem.findOne({ userId: req.userId, postId: post._id }).select('_id');
+    let userInteraction = 'none';
+    let likesCount = resource.upvotes?.length || 0;
+    let dislikesCount = resource.downvotes?.length || 0;
+    let postId = null;
+
+    const postHub = await Post.findOne({ sourceId: resource._id, sourceModel: 'Resource' }).select('_id likesCount dislikesCount');
+
+    if (postHub) {
+      postId = postHub._id;
+      likesCount = postHub.likesCount || 0;
+      dislikesCount = postHub.dislikesCount || 0;
+
+      if (req.userId) {
+        const [saved, interaction] = await Promise.all([
+          SavedItem.findOne({ userId: req.userId, postId: postHub._id }).select('_id'),
+          Interaction.findOne({ userId: req.userId, postId: postHub._id }).select('type')
+        ]);
         isSaved = !!saved;
+        userInteraction = interaction?.type || 'none';
       }
     }
 
-    const normalizedResource = withViewerContent(resource);
-    const cleanResource = {
-      ...normalizedResource,
+    const cleanResource = toSafeResourcePayload(resource, {
+      postId,
       user: resource.user || resource.createdBy || null,
-      likesCount: resource.upvotes?.length || 0,
-      dislikesCount: resource.downvotes?.length || 0,
-      commentsCount: resource.commentCount || 0,
+      likesCount,
+      dislikesCount,
       isSaved,
-      userVoteStatus: resource.upvotes?.some(id => id.toString() === userId)
-        ? 'upvoted'
-        : resource.downvotes?.some(id => id.toString() === userId)
-          ? 'downvoted'
-          : 'none',
-      upvotes: undefined,
-      downvotes: undefined
-    };
+      userInteraction,
+      userVoteStatus: userInteraction
+    });
 
     res.json({ success: true, data: cleanResource });
   } catch (error) {
     console.error('GET RESOURCE BY ID ERROR:', error);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const addComment = async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid resource ID' });
+    }
+
+    const { content, isAnonymous = false } = req.body;
+    if (!String(content || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Comment content is required' });
+    }
+
+    const resource = await Resource.findById(req.params.id);
+    if (!resource) {
+      return res.status(404).json({ success: false, message: 'Resource not found' });
+    }
+
+    await resource.addComment(req.userId, content, isAnonymous);
+
+    const updated = await Resource.findById(req.params.id)
+      .populate({ path: 'comments.commentedBy', select: 'name username profilePicture' })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        comments: (updated?.comments || []).map((comment) => applyInteractionContract({
+          ...comment
+        }, {
+          totalLikes: 0,
+          totalDislikes: 0,
+          totalComments: 0,
+          interaction: 'none',
+          isBookmarked: false
+        })),
+        commentCount: updated?.commentCount || 0,
+        commentsCount: updated?.commentCount || 0,
+        totalComments: updated?.commentCount || 0
+      }
+    });
+  } catch (error) {
+    if (
+      error?.name === 'ValidationError' ||
+      /comment content is required|at most 10 comments|already commented|duplicate comment text|approved whitelist/i.test(
+        error?.message || ''
+      )
+    ) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteComment = async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid resource ID' });
+    }
+
+    const resource = await Resource.findById(req.params.id);
+    if (!resource) {
+      return res.status(404).json({ success: false, message: 'Resource not found' });
+    }
+
+    const comment = resource.comments.id(req.params.commentId);
+    if (!comment) {
+      return res.status(404).json({ success: false, message: 'Comment not found' });
+    }
+
+    if (comment.commentedBy.toString() !== req.userId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    comment.deleteOne();
+    resource.commentCount = Math.max(0, resource.comments.length);
+    await resource.save();
+
+    const updated = await Resource.findById(req.params.id)
+      .populate({ path: 'comments.commentedBy', select: 'name username profilePicture' })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        comments: (updated?.comments || []).map((comment) => applyInteractionContract({
+          ...comment
+        }, {
+          totalLikes: 0,
+          totalDislikes: 0,
+          totalComments: 0,
+          interaction: 'none',
+          isBookmarked: false
+        })),
+        commentCount: updated?.commentCount || 0,
+        commentsCount: updated?.commentCount || 0,
+        totalComments: updated?.commentCount || 0
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -464,7 +622,16 @@ const upvoteResource = async (req, res) => {
     const userVoteStatus = updatedResource.upvotes.some(id => id.toString() === userIdStr) ? 'upvoted'
       : updatedResource.downvotes.some(id => id.toString() === userIdStr) ? 'downvoted' : 'none';
 
-    res.json({ success: true, data: { likesCount: updatedResource.upvotes.length, dislikesCount: updatedResource.downvotes.length, commentsCount: updatedResource.commentCount || 0, userVoteStatus } });
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: updatedResource.upvotes.length,
+        totalDislikes: updatedResource.downvotes.length,
+        totalComments: updatedResource.commentCount || 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -493,7 +660,16 @@ const downvoteResource = async (req, res) => {
     const userVoteStatus = updatedResource.upvotes.some(id => id.toString() === userIdStr) ? 'upvoted'
       : updatedResource.downvotes.some(id => id.toString() === userIdStr) ? 'downvoted' : 'none';
 
-    res.json({ success: true, data: { likesCount: updatedResource.upvotes.length, dislikesCount: updatedResource.downvotes.length, commentsCount: updatedResource.commentCount || 0, userVoteStatus } });
+    res.json({
+      success: true,
+      data: applyInteractionContract({}, {
+        totalLikes: updatedResource.upvotes.length,
+        totalDislikes: updatedResource.downvotes.length,
+        totalComments: updatedResource.commentCount || 0,
+        interaction: normalizeInteractionType(userVoteStatus),
+        isBookmarked: false
+      })
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -616,5 +792,5 @@ module.exports = {
   createResource, getAllResources, getResourceById, updateResource,
   deleteResource, previewResource, downloadResource,
   getTopRatedResources, upvoteResource, downvoteResource, getTrendingResources,
-  rateResource, getUserResourceRating
+  rateResource, getUserResourceRating, addComment, deleteComment
 };
