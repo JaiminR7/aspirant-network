@@ -57,7 +57,6 @@ const Settings = () => {
   const [goalText, setGoalText] = useState("");
   const [goalVisibility, setGoalVisibility] = useState("Public");
   const [activityVisibility, setActivityVisibility] = useState(true);
-  const [allowAnonymousPosting, setAllowAnonymousPosting] = useState(false);
   const [selectedExam, setSelectedExam] = useState("");
 
   // UI states
@@ -80,7 +79,6 @@ const Settings = () => {
       setGoalText(user.goal?.text || "");
       setGoalVisibility(user.goal?.visibility || "Public");
       setActivityVisibility(user.privacy?.activityVisibility ?? true);
-      setAllowAnonymousPosting(user.privacy?.allowAnonymousPosting ?? false);
       setSelectedExam(user.primaryExam || "");
     }
   }, [user]);
@@ -99,7 +97,6 @@ const Settings = () => {
         },
         privacy: {
           activityVisibility,
-          allowAnonymousPosting,
         },
       };
 
@@ -412,24 +409,6 @@ const Settings = () => {
                 className="ml-4 rounded-full"
               >
                 {activityVisibility ? "Public" : "Private"}
-              </Button>
-            </div>
-
-            {/* Anonymous Posting */}
-            <div className="flex items-center justify-between py-4">
-              <div className="flex-grow">
-                <p className="font-medium text-foreground">Anonymous Posting</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Enable option to post questions and answers anonymously
-                </p>
-              </div>
-              <Button
-                variant={allowAnonymousPosting ? "default" : "outline"}
-                size="sm"
-                onClick={() => setAllowAnonymousPosting(!allowAnonymousPosting)}
-                className="ml-4 rounded-full"
-              >
-                {allowAnonymousPosting ? "Enabled" : "Disabled"}
               </Button>
             </div>
           </div>

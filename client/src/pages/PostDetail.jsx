@@ -12,7 +12,10 @@ import { postsService } from "../services/postsService";
 import { resourceService } from "../services/resourceService";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ui/toast";
-import { normalizeInteractionContract, toLegacyInteractionFields } from "../utils/interactionContract";
+import {
+  normalizeInteractionContract,
+  toLegacyInteractionFields,
+} from "../utils/interactionContract";
 
 const MAX_COMMENT_LENGTH = 300;
 
@@ -67,10 +70,12 @@ const PostDetail = () => {
   const [comments, setComments] = useState(COMMENTS_CACHE.get(id) || []);
   const [commentText, setCommentText] = useState("");
   const [loading, setLoading] = useState(!POST_CACHE.has(id));
-  const [commentsLoading, setCommentsLoading] = useState(!COMMENTS_CACHE.has(id));
+  const [commentsLoading, setCommentsLoading] = useState(
+    !COMMENTS_CACHE.has(id),
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  
+
   // Rating states
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -82,7 +87,7 @@ const PostDetail = () => {
 
     if (isDev) console.log(`[PERF] PostDetail navigation start: ${id}`);
 
-    // If we have cached post, we already set it in state. 
+    // If we have cached post, we already set it in state.
     // We still re-fetch in background for fresh data (SWR style).
     if (!POST_CACHE.has(id)) {
       setLoading(true);
@@ -95,11 +100,15 @@ const PostDetail = () => {
       const postResponse = await postsService.getPostById(id);
       const fetchedPost = {
         ...postResponse.data,
-        ...toLegacyInteractionFields(normalizeInteractionContract(postResponse.data)),
+        ...toLegacyInteractionFields(
+          normalizeInteractionContract(postResponse.data),
+        ),
       };
-      
+
       if (isDev) {
-        console.log(`[PERF] Post API time: ${(performance.now() - apiStart).toFixed(2)}ms`);
+        console.log(
+          `[PERF] Post API time: ${(performance.now() - apiStart).toFixed(2)}ms`,
+        );
       }
 
       setPost(fetchedPost);
@@ -109,7 +118,9 @@ const PostDetail = () => {
       // Phase 1.5: Fetch user rating if it's a resource
       if (token && fetchedPost.sourceModel === "Resource") {
         try {
-          const ratingData = await resourceService.getUserRating(fetchedPost.sourceId);
+          const ratingData = await resourceService.getUserRating(
+            fetchedPost.sourceId,
+          );
           setUserRating(ratingData.data.userRating || 0);
         } catch (err) {
           console.warn("Failed to fetch user rating for post resource:", err);
@@ -131,20 +142,27 @@ const PostDetail = () => {
   const fetchComments = async (postId) => {
     const isDev = import.meta.env.DEV;
     const start = performance.now();
-    
+
     try {
       const commentsResponse = await postsService.getCommentsByPost(postId);
       const fetchedComments = commentsResponse.data || [];
-      
+
       if (isDev) {
-        console.log(`[PERF] Comments fetch time: ${(performance.now() - start).toFixed(2)}ms`);
-        console.log(`[PERF] Total render ready: ${(performance.now() - perfRef.current.start).toFixed(2)}ms`);
+        console.log(
+          `[PERF] Comments fetch time: ${(performance.now() - start).toFixed(2)}ms`,
+        );
+        console.log(
+          `[PERF] Total render ready: ${(performance.now() - perfRef.current.start).toFixed(2)}ms`,
+        );
       }
 
       setComments(fetchedComments);
       COMMENTS_CACHE.set(postId, fetchedComments);
     } catch (err) {
-      console.warn("[PostDetail] Graceful degradation: comments failed to load", err);
+      console.warn(
+        "[PostDetail] Graceful degradation: comments failed to load",
+        err,
+      );
     } finally {
       setCommentsLoading(false);
     }
@@ -192,11 +210,14 @@ const PostDetail = () => {
       setCommentText("");
       setPost((prev) => {
         if (!prev) return prev;
-        const nextCount = response.data?.totalComments ?? response.data?.commentsCount ?? prev.commentsCount + 1;
+        const nextCount =
+          response.data?.totalComments ??
+          response.data?.commentsCount ??
+          prev.commentsCount + 1;
         const updatedPost = {
           ...prev,
           commentsCount: nextCount,
-          totalComments: nextCount
+          totalComments: nextCount,
         };
         POST_CACHE.set(id, updatedPost);
         return updatedPost;
@@ -212,31 +233,45 @@ const PostDetail = () => {
 
   const handleRate = async (rating) => {
     if (!token) {
-      addToast({ title: "Login required", description: "Please login to rate resources.", variant: "error" });
+      addToast({
+        title: "Login required",
+        description: "Please login to rate resources.",
+        variant: "error",
+      });
       return;
     }
-    
+
     if (!post || post.sourceModel !== "Resource") return;
 
     setRatingLoading(true);
     try {
       await resourceService.rate(post.sourceId, rating);
       setUserRating(rating);
-      // We don't necessarily have a rating count in the post model itself 
+      // We don't necessarily have a rating count in the post model itself
       // as it might be a denormalized view, but we can update state if needed.
-      addToast({ title: "Rating updated", description: `You rated this ${rating} stars.`, variant: "success" });
-      
+      addToast({
+        title: "Rating updated",
+        description: `You rated this ${rating} stars.`,
+        variant: "success",
+      });
+
       // Refresh post data to get updated aggregate if it exists
       const postResponse = await postsService.getPostById(id);
       const normalizedPost = {
         ...postResponse.data,
-        ...toLegacyInteractionFields(normalizeInteractionContract(postResponse.data)),
+        ...toLegacyInteractionFields(
+          normalizeInteractionContract(postResponse.data),
+        ),
       };
       setPost(normalizedPost);
       POST_CACHE.set(id, normalizedPost);
     } catch (error) {
       console.error("Error rating resource from post:", error);
-      addToast({ title: "Error", description: "Failed to submit rating.", variant: "error" });
+      addToast({
+        title: "Error",
+        description: "Failed to submit rating.",
+        variant: "error",
+      });
     } finally {
       setRatingLoading(false);
     }
@@ -262,7 +297,11 @@ const PostDetail = () => {
 
   return (
     <div className="space-y-4 py-4 animate-in fade-in duration-500">
-      <Button variant="outline" onClick={() => navigate(-1)} className="hover:bg-muted/50">
+      <Button
+        variant="outline"
+        onClick={() => navigate(-1)}
+        className="hover:bg-muted/50"
+      >
         <ArrowLeft className="h-4 w-4" />
         Back to Feed
       </Button>
@@ -273,7 +312,6 @@ const PostDetail = () => {
           author={post.author || post.userId}
           exam={post.exam}
           createdAt={post.createdAt}
-          isAnonymous={Boolean(post.isAnonymous)}
         />
         <PostContent
           title={post.title}
@@ -348,10 +386,14 @@ const PostDetail = () => {
                 ...toLegacyInteractionFields(next),
                 totalLikes: next.totalLikes,
                 totalDislikes: next.totalDislikes,
-                totalComments: next.totalComments ?? prev.totalComments ?? prev.commentsCount ?? 0,
+                totalComments:
+                  next.totalComments ??
+                  prev.totalComments ??
+                  prev.commentsCount ??
+                  0,
                 isLiked: next.isLiked,
                 isDisliked: next.isDisliked,
-                isBookmarked: next.isBookmarked
+                isBookmarked: next.isBookmarked,
               };
               POST_CACHE.set(id, updated);
               return updated;
@@ -409,7 +451,8 @@ const PostDetail = () => {
               </p>
             ) : (
               visibleComments.map((comment) => {
-                if (!comment.userId || typeof comment.userId !== "object") return null;
+                if (!comment.userId || typeof comment.userId !== "object")
+                  return null;
                 const userName = comment.userId.name;
                 if (!userName) return null;
 
@@ -426,7 +469,9 @@ const PostDetail = () => {
                         {new Date(comment.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{comment.text}</p>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {comment.text}
+                    </p>
                   </div>
                 );
               })

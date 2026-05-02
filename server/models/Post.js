@@ -38,10 +38,6 @@ const postSchema = new mongoose.Schema(
       required: true,
       index: true
     },
-    isAnonymous: {
-      type: Boolean,
-      default: false
-    },
     title: {
       type: String,
       required: [true, 'Post title is required'],

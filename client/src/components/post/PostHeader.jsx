@@ -1,8 +1,8 @@
 import { Badge } from "../ui/badge";
 
-const PostHeader = ({ author, exam, createdAt, isAnonymous = false }) => {
-  const name = isAnonymous ? "Anonymous" : author?.name || "User";
-  const username = isAnonymous ? "" : author?.username || "anonymous";
+const PostHeader = ({ author, exam, createdAt }) => {
+  const name = author?.name || "User";
+  const username = author?.username || "anonymous";
   const dateLabel = createdAt
     ? new Date(createdAt).toLocaleDateString()
     : "Just now";
@@ -18,7 +18,7 @@ const PostHeader = ({ author, exam, createdAt, isAnonymous = false }) => {
             {name}
           </p>
           <p className="text-xs text-muted-foreground truncate">
-            {isAnonymous ? dateLabel : `@${username} · ${dateLabel}`}
+            @{username} · {dateLabel}
           </p>
         </div>
       </div>

@@ -10,7 +10,7 @@ const PostCard = ({ post }) => {
 
   const handleOpenPost = () => {
     console.debug("[post] open detail", post._id, post.type);
-    
+
     // Redirect questions to their specialized detail page to show answers
     if (post.type === "question" && post.sourceId) {
       navigate(`/question/${post.sourceId}`);
@@ -35,12 +35,7 @@ const PostCard = ({ post }) => {
       }}
     >
       <PostTypeBadge type={post.type} className="absolute top-3 left-3" />
-      <PostHeader
-        author={author}
-        exam={post.exam}
-        createdAt={post.createdAt}
-        isAnonymous={Boolean(post.isAnonymous)}
-      />
+      <PostHeader author={author} exam={post.exam} createdAt={post.createdAt} />
       <PostContent
         title={post.title}
         content={post.description}

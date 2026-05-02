@@ -25,7 +25,7 @@ import { storyService } from "../services/storyService";
 import { pushPendingFeedPost } from "../utils/feedOptimistic";
 import { STORY_TYPES } from "../constants/appConstants";
 
-const CREATE_STORY_TYPES = STORY_TYPES.filter(t => t.value !== 'all');
+const CREATE_STORY_TYPES = STORY_TYPES.filter((t) => t.value !== "all");
 
 // Common tags for stories
 const COMMON_TAGS = [
@@ -45,9 +45,6 @@ const AddStory = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
 
-  // Respect the user's anonymous posting privacy setting
-  const canPostAnonymously = user?.privacy?.allowAnonymousPosting ?? false;
-
   const [formData, setFormData] = useState({
     title: "",
     content: "",
@@ -56,7 +53,6 @@ const AddStory = () => {
     tags: [],
     tagInput: "",
     result: "",
-    isAnonymous: false,
   });
 
   const [errors, setErrors] = useState({});
@@ -168,52 +164,35 @@ const AddStory = () => {
         excerpt: formData.excerpt.trim() || undefined,
         storyType: formData.storyType,
         tags: formData.tags,
-        isAnonymous: formData.isAnonymous,
         result: formData.result.trim() || undefined,
       };
 
       const data = await storyService.create(payload);
 
-      const optimisticPost =
-        data.feedPost || {
-          _id: data?.postId,
-          type: "story",
-          exam: user?.examPreference || user?.primaryExam,
-          title: payload.title,
-          description: payload.excerpt || payload.content,
-          tags: payload.tags || [],
-          isAnonymous: Boolean(payload.isAnonymous),
-          author: payload.isAnonymous
-            ? {
-                name: "Anonymous",
-                username: "anonymous",
-                profilePicture: null,
-                avatar: null,
-              }
-            : {
-                name: user?.name,
-                username: user?.username,
-                profilePicture: user?.profilePicture || null,
-              },
-          userId: payload.isAnonymous
-            ? {
-                name: "Anonymous",
-                username: "anonymous",
-                profilePicture: null,
-                avatar: null,
-              }
-            : {
-                name: user?.name,
-                username: user?.username,
-                profilePicture: user?.profilePicture || null,
-              },
-          likesCount: 0,
-          dislikesCount: 0,
-          commentsCount: 0,
-          userInteraction: "none",
-          userVoteStatus: "none",
-          createdAt: new Date().toISOString(),
-        };
+      const optimisticPost = data.feedPost || {
+        _id: data?.postId,
+        type: "story",
+        exam: user?.examPreference || user?.primaryExam,
+        title: payload.title,
+        description: payload.excerpt || payload.content,
+        tags: payload.tags || [],
+        author: {
+          name: user?.name,
+          username: user?.username,
+          profilePicture: user?.profilePicture || null,
+        },
+        userId: {
+          name: user?.name,
+          username: user?.username,
+          profilePicture: user?.profilePicture || null,
+        },
+        likesCount: 0,
+        dislikesCount: 0,
+        commentsCount: 0,
+        userInteraction: "none",
+        userVoteStatus: "none",
+        createdAt: new Date().toISOString(),
+      };
 
       pushPendingFeedPost(optimisticPost);
 
@@ -449,43 +428,6 @@ const AddStory = () => {
                       </Badge>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Anonymous Toggle */}
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center space-x-2">
-                  <input
-                    id="isAnonymous"
-                    type="checkbox"
-                    name="isAnonymous"
-                    checked={formData.isAnonymous}
-                    onChange={handleChange}
-                    disabled={!canPostAnonymously}
-                    className="h-4 w-4 rounded border-border bg-background disabled:opacity-40 disabled:cursor-not-allowed"
-                  />
-                  <Label
-                    htmlFor="isAnonymous"
-                    className={`text-sm font-normal ${
-                      canPostAnonymously
-                        ? "cursor-pointer"
-                        : "cursor-not-allowed opacity-50"
-                    }`}
-                  >
-                    Post anonymously
-                  </Label>
-                </div>
-                {!canPostAnonymously && (
-                  <p className="text-xs text-muted-foreground pl-6">
-                    Enable anonymous posting in{" "}
-                    <a
-                      href="/settings"
-                      className="underline hover:text-foreground transition-colors"
-                    >
-                      Privacy Settings
-                    </a>{" "}
-                    to use this option.
-                  </p>
                 )}
               </div>
 

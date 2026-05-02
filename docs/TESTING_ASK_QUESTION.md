@@ -57,10 +57,6 @@
 - You can add up to 3 custom tags
 - Click the "×" on a tag to remove it
 
-#### Anonymous Option (Optional)
-
-- Check the "Post anonymously" checkbox if you want to post without your name
-
 ### 4. Verify Form Validation
 
 The "Post Question" button will be **disabled** (grayed out) if:

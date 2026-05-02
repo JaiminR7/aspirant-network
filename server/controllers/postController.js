@@ -3,28 +3,10 @@ const Interaction = require('../models/Interaction');
 const SavedItem = require('../models/SavedItem');
 const { applyInteractionContract, normalizeInteractionType } = require('../utils/interactionContract');
 
-const ANONYMOUS_USER = {
-  name: 'Anonymous',
-  username: 'anonymous',
-  profilePicture: null,
-  avatar: null
-};
-
 const parsePositiveInt = (value, fallback, max = 100) => {
   const parsed = parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.min(parsed, max);
-};
-
-const applyAnonymousIdentity = (post) => {
-  if (!post?.isAnonymous) return post;
-
-  return {
-    ...post,
-    user: ANONYMOUS_USER,
-    userId: ANONYMOUS_USER,
-    author: ANONYMOUS_USER
-  };
 };
 
 const enrichPostsWithInteraction = async (posts, userId) => {
@@ -57,7 +39,7 @@ const enrichPostsWithInteraction = async (posts, userId) => {
     const userInteraction = normalizeInteractionType(interactionMap.get(base._id.toString()) || 'none');
     const isSaved = savedSet.has(base._id.toString());
 
-    return applyAnonymousIdentity(applyInteractionContract({
+    return applyInteractionContract({
       ...base,
       type: base.type || 'question',
       author: base.userId,
@@ -67,7 +49,7 @@ const enrichPostsWithInteraction = async (posts, userId) => {
       totalComments: base.commentsCount || 0,
       interaction: userInteraction,
       isBookmarked: isSaved
-    }));
+    });
   });
 };
 
@@ -157,7 +139,7 @@ const getPostById = async (req, res) => {
 
     return res.json({
       success: true,
-      data: applyAnonymousIdentity(applyInteractionContract({
+      data: applyInteractionContract({
         ...post,
         type: post.type || 'question',
         author: post.userId
@@ -167,7 +149,7 @@ const getPostById = async (req, res) => {
         totalComments: post.commentsCount || 0,
         interaction: userInteraction,
         isBookmarked: !!isSavedItem
-      }))
+      })
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

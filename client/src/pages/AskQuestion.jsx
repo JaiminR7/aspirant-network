@@ -42,9 +42,6 @@ const AskQuestion = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
 
-  // Respect the user's anonymous posting privacy setting
-  const canPostAnonymously = user?.privacy?.allowAnonymousPosting ?? false;
-
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -55,7 +52,6 @@ const AskQuestion = () => {
     systemTags: [],
     userTags: [],
     userTagInput: "",
-    isAnonymous: false,
   });
 
   const [subjects, setSubjects] = useState([]);
@@ -300,7 +296,6 @@ const AskQuestion = () => {
         topicName: formData.topicName,
         systemTags: formData.systemTags,
         userTags: formData.userTags,
-        isAnonymous: formData.isAnonymous,
       };
 
       console.log("Submitting question with data:", questionData);
@@ -309,46 +304,33 @@ const AskQuestion = () => {
 
       console.log("Question created successfully:", data);
 
-      const optimisticPost =
-        data.feedPost || {
-          _id: data?.postId,
-          type: "question",
-          exam: user?.examPreference || user?.primaryExam,
-          title: questionData.title,
-          description: questionData.description,
-          tags: [...(questionData.systemTags || []), ...(questionData.userTags || [])],
-          isAnonymous: Boolean(questionData.isAnonymous),
-          author: questionData.isAnonymous
-            ? {
-                name: "Anonymous",
-                username: "anonymous",
-                profilePicture: null,
-                avatar: null,
-              }
-            : {
-                name: user?.name,
-                username: user?.username,
-                profilePicture: user?.profilePicture || null,
-              },
-          userId: questionData.isAnonymous
-            ? {
-                name: "Anonymous",
-                username: "anonymous",
-                profilePicture: null,
-                avatar: null,
-              }
-            : {
-                name: user?.name,
-                username: user?.username,
-                profilePicture: user?.profilePicture || null,
-              },
-          likesCount: 0,
-          dislikesCount: 0,
-          commentsCount: 0,
-          userInteraction: "none",
-          userVoteStatus: "none",
-          createdAt: new Date().toISOString(),
-        };
+      const optimisticPost = data.feedPost || {
+        _id: data?.postId,
+        type: "question",
+        exam: user?.examPreference || user?.primaryExam,
+        title: questionData.title,
+        description: questionData.description,
+        tags: [
+          ...(questionData.systemTags || []),
+          ...(questionData.userTags || []),
+        ],
+        author: {
+          name: user?.name,
+          username: user?.username,
+          profilePicture: user?.profilePicture || null,
+        },
+        userId: {
+          name: user?.name,
+          username: user?.username,
+          profilePicture: user?.profilePicture || null,
+        },
+        likesCount: 0,
+        dislikesCount: 0,
+        commentsCount: 0,
+        userInteraction: "none",
+        userVoteStatus: "none",
+        createdAt: new Date().toISOString(),
+      };
 
       pushPendingFeedPost(optimisticPost);
       navigate("/");
@@ -610,47 +592,6 @@ const AskQuestion = () => {
                       </Badge>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Anonymous Option */}
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center space-x-2">
-                  <input
-                    id="isAnonymous"
-                    type="checkbox"
-                    checked={formData.isAnonymous}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        isAnonymous: e.target.checked,
-                      }))
-                    }
-                    disabled={!canPostAnonymously}
-                    className="h-4 w-4 rounded border-border bg-background disabled:opacity-40 disabled:cursor-not-allowed"
-                  />
-                  <Label
-                    htmlFor="isAnonymous"
-                    className={`text-sm font-normal ${
-                      canPostAnonymously
-                        ? "cursor-pointer"
-                        : "cursor-not-allowed opacity-50"
-                    }`}
-                  >
-                    Post anonymously
-                  </Label>
-                </div>
-                {!canPostAnonymously && (
-                  <p className="text-xs text-muted-foreground pl-6">
-                    Enable anonymous posting in{" "}
-                    <a
-                      href="/settings"
-                      className="underline hover:text-foreground transition-colors"
-                    >
-                      Privacy Settings
-                    </a>{" "}
-                    to use this option.
-                  </p>
                 )}
               </div>
 

@@ -50,7 +50,6 @@ const QuestionDetail = () => {
   const [answerContent, setAnswerContent] = useState("");
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [answerError, setAnswerError] = useState("");
-  const [isAnonymous, setIsAnonymous] = useState(false);
 
   // Mark solved state
   const [markingSolved, setMarkingSolved] = useState(false);
@@ -69,13 +68,16 @@ const QuestionDetail = () => {
     try {
       const qStart = performance.now();
       const data = await questionService.getById(id);
-      
+
       if (isDev) {
-        console.log(`[PERF] Question API time: ${(performance.now() - qStart).toFixed(2)}ms`);
+        console.log(
+          `[PERF] Question API time: ${(performance.now() - qStart).toFixed(2)}ms`,
+        );
       }
-      
+
       const fetchedQuestionRaw = data.data || data.question;
-      const questionInteraction = normalizeInteractionContract(fetchedQuestionRaw);
+      const questionInteraction =
+        normalizeInteractionContract(fetchedQuestionRaw);
       const fetchedQuestion = { ...fetchedQuestionRaw, ...questionInteraction };
       setQuestion(fetchedQuestion);
       POST_CACHE.set(id, fetchedQuestion);
@@ -96,31 +98,51 @@ const QuestionDetail = () => {
     try {
       // Use the intended API contract: answerService.getAnswersByQuestion(questionId)
       const data = await answerService.getAnswersByQuestion(questionId);
-      const fetchedAnswers = (data.data || data.answers || []).map((answer) => ({
-        ...answer,
-        ...normalizeInteractionContract(answer),
-      }));
+      const fetchedAnswers = (data.data || data.answers || []).map(
+        (answer) => ({
+          ...answer,
+          ...normalizeInteractionContract(answer),
+        }),
+      );
 
       if (isDev) {
-        console.log(`[PERF] Answers fetch time: ${(performance.now() - start).toFixed(2)}ms`);
-        console.log(`[PERF] Total Question render ready: ${(performance.now() - perfRef.current.start).toFixed(2)}ms`);
+        console.log(
+          `[PERF] Answers fetch time: ${(performance.now() - start).toFixed(2)}ms`,
+        );
+        console.log(
+          `[PERF] Total Question render ready: ${(performance.now() - perfRef.current.start).toFixed(2)}ms`,
+        );
       }
 
       setAnswers(Array.isArray(fetchedAnswers) ? fetchedAnswers : []);
-      COMMENTS_CACHE.set(questionId, Array.isArray(fetchedAnswers) ? fetchedAnswers : []);
+      COMMENTS_CACHE.set(
+        questionId,
+        Array.isArray(fetchedAnswers) ? fetchedAnswers : [],
+      );
     } catch (err) {
-      console.warn("[QuestionDetail] Primary answers route failed, trying fallback", err);
+      console.warn(
+        "[QuestionDetail] Primary answers route failed, trying fallback",
+        err,
+      );
       // Fallback to nested route if flat route is unavailable
       try {
         const fallback = await answerService.getByQuestion(questionId);
-        const fetchedAnswers = (fallback.data || fallback.answers || []).map((answer) => ({
-          ...answer,
-          ...normalizeInteractionContract(answer),
-        }));
+        const fetchedAnswers = (fallback.data || fallback.answers || []).map(
+          (answer) => ({
+            ...answer,
+            ...normalizeInteractionContract(answer),
+          }),
+        );
         setAnswers(Array.isArray(fetchedAnswers) ? fetchedAnswers : []);
-        COMMENTS_CACHE.set(questionId, Array.isArray(fetchedAnswers) ? fetchedAnswers : []);
+        COMMENTS_CACHE.set(
+          questionId,
+          Array.isArray(fetchedAnswers) ? fetchedAnswers : [],
+        );
       } catch (fallbackErr) {
-        console.warn("[QuestionDetail] Answers failed to load (both routes)", fallbackErr);
+        console.warn(
+          "[QuestionDetail] Answers failed to load (both routes)",
+          fallbackErr,
+        );
         setAnswers([]);
       }
     } finally {
@@ -162,7 +184,9 @@ const QuestionDetail = () => {
       const nextCount =
         createRes?.totalComments ??
         createRes?.commentsCount ??
-        (typeof question?.answerCount === "number" ? question.answerCount + 1 : undefined);
+        (typeof question?.answerCount === "number"
+          ? question.answerCount + 1
+          : undefined);
       if (typeof nextCount === "number") {
         setQuestion((prev) => ({
           ...prev,
@@ -215,26 +239,42 @@ const QuestionDetail = () => {
 
   const handleSave = async () => {
     if (!token) {
-      addToast({ title: "Login required", description: "Please login to save questions.", variant: "error" });
+      addToast({
+        title: "Login required",
+        description: "Please login to save questions.",
+        variant: "error",
+      });
       return;
     }
     if (savePending) return;
 
     const previousState = question.isSaved;
-    setQuestion(prev => ({ ...prev, isSaved: !previousState }));
+    setQuestion((prev) => ({ ...prev, isSaved: !previousState }));
     setSavePending(true);
 
     try {
       if (previousState) {
         await postsService.unsavePost(id);
-        addToast({ title: "Removed", description: "Question removed from your library.", variant: "default" });
+        addToast({
+          title: "Removed",
+          description: "Question removed from your library.",
+          variant: "default",
+        });
       } else {
         await postsService.savePost(id);
-        addToast({ title: "Saved", description: "Added to your private study collection.", variant: "success" });
+        addToast({
+          title: "Saved",
+          description: "Added to your private study collection.",
+          variant: "success",
+        });
       }
     } catch (error) {
-      setQuestion(prev => ({ ...prev, isSaved: previousState }));
-      addToast({ title: "Error", description: "Failed to update library. Try again.", variant: "error" });
+      setQuestion((prev) => ({ ...prev, isSaved: previousState }));
+      addToast({
+        title: "Error",
+        description: "Failed to update library. Try again.",
+        variant: "error",
+      });
     } finally {
       setSavePending(false);
     }
@@ -242,7 +282,11 @@ const QuestionDetail = () => {
 
   const handleVote = async (type, targetType, targetId) => {
     if (!token) {
-      addToast({ title: "Login required", description: "Please login to vote", variant: "error" });
+      addToast({
+        title: "Login required",
+        description: "Please login to vote",
+        variant: "error",
+      });
       return;
     }
 
@@ -253,19 +297,19 @@ const QuestionDetail = () => {
       // --- Optimistic update for answer ---
       const answer = answers.find((a) => a._id === targetId);
       if (!answer) return;
-      
+
       const savedA = {
         upvotes: answer.upvotes,
         downvotes: answer.downvotes,
         userVoteStatus: answer.userVoteStatus,
       };
-      
+
       const wasUpvoted = savedA.userVoteStatus === "upvoted";
       const wasDownvoted = savedA.userVoteStatus === "downvoted";
       let nextUp = savedA.upvotes ?? 0;
       let nextDown = savedA.downvotes ?? 0;
       let nextStatus;
-      
+
       if (type === "upvote") {
         if (wasUpvoted) {
           nextUp -= 1;
@@ -300,10 +344,11 @@ const QuestionDetail = () => {
       );
 
       try {
-        const data = type === "upvote" 
-          ? await answerService.upvote(id, targetId)
-          : await answerService.downvote(id, targetId);
-          
+        const data =
+          type === "upvote"
+            ? await answerService.upvote(id, targetId)
+            : await answerService.downvote(id, targetId);
+
         const resData = data.data || data;
         setAnswers((arr) =>
           arr.map((a) =>
@@ -321,14 +366,17 @@ const QuestionDetail = () => {
         setAnswers((arr) =>
           arr.map((a) => (a._id === targetId ? { ...a, ...savedA } : a)),
         );
-        addToast({ title: "Error", description: "Failed to submit vote.", variant: "error" });
+        addToast({
+          title: "Error",
+          description: "Failed to submit vote.",
+          variant: "error",
+        });
       }
     }
   };
 
-
-  const isQuestionOwner = question?.createdBy?._id === user?._id || question?.createdBy === user?._id;
-  const canPostAnonymously = user?.privacy?.allowAnonymousPosting || false;
+  const isQuestionOwner =
+    question?.createdBy?._id === user?._id || question?.createdBy === user?._id;
 
   if (loading) {
     return (
@@ -495,7 +543,9 @@ const QuestionDetail = () => {
             likesCount={question.likesCount}
             dislikesCount={question.dislikesCount}
             commentsCount={question.commentsCount ?? question.answerCount}
-            initialInteraction={question.userInteraction ?? question.userVoteStatus}
+            initialInteraction={
+              question.userInteraction ?? question.userVoteStatus
+            }
             initialIsSaved={question.isSaved}
             onCommentClick={() => document.getElementById("answer")?.focus()}
             showBorder={true}
@@ -554,20 +604,16 @@ const QuestionDetail = () => {
                         Accepted Answer
                       </span>
                     </div>
-                  )}  
+                  )}
 
                   {/* Username at top */}
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground text-sm font-bold">
-                      {answer.isAnonymous
-                        ? "A"
-                        : answer.author?.name?.charAt(0).toUpperCase() || "U"}
+                      {answer.author?.name?.charAt(0).toUpperCase() || "U"}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground">
-                        {answer.isAnonymous
-                          ? "Anonymous"
-                          : answer.author?.username || "Unknown"}
+                        {answer.author?.username || "Unknown"}
                       </span>
                       {answer.author?.credibilityScore > 0 && (
                         <Badge
@@ -596,7 +642,9 @@ const QuestionDetail = () => {
                     <div className="flex items-center gap-3 text-sm text-muted-foreground">
                       <button
                         type="button"
-                        onClick={() => handleVote("upvote", "answer", answer._id)}
+                        onClick={() =>
+                          handleVote("upvote", "answer", answer._id)
+                        }
                         className={`flex items-center gap-1.5 transition-colors group ${
                           answer.userVoteStatus === "upvoted"
                             ? "text-sky-600 font-semibold"
@@ -605,14 +653,18 @@ const QuestionDetail = () => {
                       >
                         <ThumbsUp
                           className={`w-3.5 h-3.5 transition-transform group-hover:scale-110 ${
-                            answer.userVoteStatus === "upvoted" ? "fill-sky-600/10" : ""
+                            answer.userVoteStatus === "upvoted"
+                              ? "fill-sky-600/10"
+                              : ""
                           }`}
                         />
                         <span>{answer.upvotes || 0}</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleVote("downvote", "answer", answer._id)}
+                        onClick={() =>
+                          handleVote("downvote", "answer", answer._id)
+                        }
                         className={`flex items-center gap-1.5 transition-colors group ${
                           answer.userVoteStatus === "downvoted"
                             ? "text-red-600 font-semibold"
@@ -621,7 +673,9 @@ const QuestionDetail = () => {
                       >
                         <ThumbsDown
                           className={`w-3.5 h-3.5 transition-transform group-hover:scale-110 ${
-                            answer.userVoteStatus === "downvoted" ? "fill-red-600/10" : ""
+                            answer.userVoteStatus === "downvoted"
+                              ? "fill-red-600/10"
+                              : ""
                           }`}
                         />
                         <span>{answer.downvotes || 0}</span>
@@ -668,41 +722,6 @@ const QuestionDetail = () => {
                   className="min-h-[150px] bg-background border-2 border-primary rounded-xl resize-none focus-visible:outline-none focus-visible:ring-0 focus-visible:border-primary"
                   disabled={submittingAnswer}
                 />
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center space-x-2">
-                  <input
-                    id="isAnonymousAnswer"
-                    type="checkbox"
-                    checked={isAnonymous}
-                    onChange={(e) => setIsAnonymous(e.target.checked)}
-                    className="h-4 w-4 rounded border-border bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
-                    disabled={submittingAnswer || !canPostAnonymously}
-                  />
-                  <Label
-                    htmlFor="isAnonymousAnswer"
-                    className={`font-normal ${
-                      canPostAnonymously
-                        ? "text-muted-foreground"
-                        : "text-muted-foreground opacity-50 cursor-not-allowed"
-                    }`}
-                  >
-                    Post anonymously
-                  </Label>
-                </div>
-                {!canPostAnonymously && (
-                  <p className="text-xs text-muted-foreground pl-6">
-                    Enable anonymous posting in{" "}
-                    <a
-                      href="/settings"
-                      className="underline hover:text-foreground transition-colors"
-                    >
-                      Privacy Settings
-                    </a>{" "}
-                    to use this option.
-                  </p>
-                )}
               </div>
 
               <Button
